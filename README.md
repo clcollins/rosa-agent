@@ -225,8 +225,53 @@ This is likely the `openssh-clients` package missing from the execution environm
 
 Ensure your JWT has refreshed right before running the command.  Theoretically it's a 300s TTL, but in practice it doesn't seem to behave like this.  Need more data.
 
+### Refreshing your gateway token (interactive use)
 
+Once a gateway is registered (see above), you interact with it directly through
+the `openshell` CLI, `-g <gateway_name>`:
 
+```bash
+GW_NAME='ROSA Agentic Devx-rosa-agent'
+
+openshell -g "$GW_NAME" whoami
+openshell -g "$GW_NAME" sandbox create --name demo
+```
+
+The `client_credentials` access token in `oidc_token.json` is short-lived and
+there is no refresh token — it must be re-minted. The
+[`hack/refresh_openshell_token.py`](hack/refresh_openshell_token.py) helper
+re-mints the token in place from the OIDC client secret (read from
+`OPENSHELL_OIDC_CLIENT_SECRET`, falling back to Vault) so you don't hit the
+`ssh exited with status 255` auth failure above:
+
+```bash
+# Re-mint the gateway's token file:
+hack/refresh_openshell_token.py -g "$GW_NAME"
+
+# Only re-mint if fewer than 90s of life remain:
+hack/refresh_openshell_token.py -g "$GW_NAME" --if-expiring 90
+
+# Refresh the token, then run — this is the reliable pattern. The script
+# re-mints as needed and retries once on auth failure, then execs the
+# openshell command after `--exec --`:
+export OPENSHELL_OIDC_CLIENT_SECRET=...   # or let the script read Vault
+hack/refresh_openshell_token.py -g "ROSA Agentic Devx" \
+  --exec -- sandbox create --name sop-cop \
+    --from quay.io/chcollin/scratch:openshell-sandbox-1788567061 \
+    --provider rosa-general-vertex \
+    --env=ANTHROPIC_BASE_URL=https://inference.local \
+    --env=ANTHROPIC_API_KEY=unused \
+    --provider rosa-agent-github --provider rosa-agent-jira \
+    --env JIRA_EMAIL="sd-sre-platform+rosa-agent@redhat.com" \
+    --env=JIRA_BASE_URL="https://redhat.atlassian.net" \
+    --no-keep --no-tty \
+    -- claude --print "Ping"
+```
+
+It reads config (issuer, client id) from the gateway's `metadata.json`, so no
+flags beyond `-g` are needed for a gateway registered as above. Run
+`hack/refresh_openshell_token.py --help` for the full flag list (Vault
+mount/path/field overrides, `--no-browser`, `--no-vault-login`, etc.).
 
 ## Github
 
