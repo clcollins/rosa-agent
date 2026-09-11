@@ -40,14 +40,13 @@ sandbox-push: require-sandbox-image sandbox-build
 # ---------------------------------------------------------------------------
 # Konflux scheduled jobs (see README's "Konflux configuration > Scheduled
 # jobs" section). Each CronJob's pod has the OpenShell CLI and the
-# `ROSA Agentic Devx-rosa-agent` gateway registered, plus
-# OPENSHELL_OIDC_CLIENT_SECRET injected from Vault; the target below refreshes
-# that gateway's token via hack/refresh_openshell_token.py and then, in the
-# same command, creates a one-shot sandbox that runs the matching skill and
-# exits (--no-keep --no-tty).
+# `ROSA Agentic Devx` gateway registered, plus OPENSHELL_OIDC_CLIENT_SECRET
+# injected from Vault; the target below refreshes that gateway's token via
+# hack/refresh_openshell_token.py and then, in the same command, creates a
+# one-shot sandbox that runs the matching skill and exits (--no-keep --no-tty).
 # ---------------------------------------------------------------------------
 
-GW_NAME ?= ROSA Agentic Devx-rosa-agent
+GW_NAME ?= ROSA Agentic Devx
 SOP_IMPROVE_IMAGE ?= quay.io/redhat-user-workloads/rosa-tenant/rosa-agent:latest
 
 .PHONY: sop-improve
