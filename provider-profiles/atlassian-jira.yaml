@@ -1,0 +1,157 @@
+# Custom OpenShell provider profile: Atlassian Jira Cloud
+#
+# Scope:
+#   Read  — issues, comments, transitions, editable/creatable field
+#           metadata, field IDs, projects, JQL search, the agent's own
+#           account (/myself) — everything under GET /rest/api/3/** and
+#           GET /rest/agile/1.0/**.
+#   Write — create issues, edit issues, comment on issues, add remote
+#           (web) links, transition issues, self-assign issues.
+#   Not included: delete issues, bulk operations, attachments, worklogs,
+#   watchers/votes, issue-to-issue links, and admin endpoints (workflow
+#   schemes, permission schemes, etc.). Add those the same way, as
+#   explicit rules, if a real need shows up — avoid widening POST/PUT
+#   with a catch-all, since that's where real damage is possible.
+#
+# Import:
+#   openshell provider profile lint -f atlassian-jira-profile.yaml
+#   openshell provider profile import -f atlassian-jira-profile.yaml
+#
+# Create the provider. JIRA_API_TOKEN is the only real secret this profile
+# manages — it becomes an opaque, proxy-resolved placeholder inside the
+# sandbox (openshell:resolve:env:*), never a plaintext value:
+#   openshell provider create --name work-jira --type atlassian-jira \
+#       --credential JIRA_API_TOKEN
+#
+# JIRA_EMAIL and JIRA_BASE_URL are NOT secrets, and they are NOT handled by
+# this profile or by `provider create --config`. Custom profiles have no
+# mechanism to expose --config values as sandbox env vars — only entries
+# declared under credentials[*].env_vars (i.e. JIRA_API_TOKEN) get injected.
+# Set the email and base URL as plain, non-secret environment variables at
+# sandbox creation time instead:
+#   openshell sandbox create --provider work-jira \
+#       --env JIRA_EMAIL=you@yourcompany.com \
+#       --env JIRA_BASE_URL=https://yourcompany.atlassian.net \
+#       -- claude
+#
+# Attach to an existing sandbox (still needs the --env flags passed when
+# that sandbox was created — attach does not retroactively add them):
+#   openshell sandbox provider attach <sandbox> work-jira
+#
+# Inside the sandbox the agent sees JIRA_API_TOKEN set to an opaque
+# openshell:resolve:env:* placeholder. It uses it exactly like a real token:
+#
+#   curl -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+#     "$JIRA_BASE_URL/rest/api/3/issue/PROJ-123"
+#
+# The sandbox proxy decodes the Basic auth header, substitutes the real
+# token, and re-encodes it — but ONLY for the endpoints declared below.
+# Reads work off GET /rest/api/3/**, so no separate rule is needed per
+# read endpoint; writes are enumerated explicitly and narrowly on purpose.
+#
+# Two-step write patterns the agent needs to know:
+#   Edit issue       — GET .../editmeta first to see which fields are
+#                       editable and how, then PUT with only the changed
+#                       fields.
+#   Transition issue — GET .../transitions first to find the numeric
+#                       transition id for the target status (these are
+#                       per-project/per-workflow, not guessable), then
+#                       POST {"transition": {"id": "<id>"}}.
+#   Self-assign      — GET /rest/api/3/myself first to get the agent's own
+#                       accountId, then PUT .../assignee with
+#                       {"accountId": "<id>"}.
+id: atlassian-jira
+display_name: Atlassian Jira
+description: Jira Cloud access for sandboxed agents — read anything; create, edit, transition, comment on, and self-assign issues; add remote (web) links
+category: data
+credentials:
+- name: api_token
+  description: Jira Cloud API token (paired with account email via HTTP Basic auth)
+  env_vars:
+  - JIRA_API_TOKEN
+  required: true
+  auth_style: basic
+discovery:
+  credentials:
+  - api_token
+endpoints:
+# Classic token base URL: <site>.atlassian.net
+- host: redhat.atlassian.net
+  port: 443
+  protocol: rest
+  enforcement: enforce
+  rules:
+  # Unauthenticated, read-only cloudId discovery. Lets the sandbox skill derive
+  # the tenant cloudId for scoped-token Bearer auth against api.atlassian.com
+  # without pre-set JIRA_BASE_URL config. Safe: returns only {"cloudId": ...}.
+  - allow:
+      method: GET
+      path: /_edge/tenant_info
+  # Covers: get issue, JQL-less browse, comments, transitions list,
+  # editmeta, createmeta, field IDs, project lookups, and /myself
+  # (the agent's own account identity) — everything read-only under v3.
+  - allow:
+      method: GET
+      path: /rest/api/3/**
+  - allow:
+      method: GET
+      path: /rest/agile/1.0/**
+  - allow:
+      method: POST
+      path: /rest/api/3/search/jql
+  - allow:
+      method: POST
+      path: /rest/api/3/issue
+  - allow:
+      method: PUT
+      path: /rest/api/3/issue/*
+  - allow:
+      method: POST
+      path: /rest/api/3/issue/*/comment
+  - allow:
+      method: POST
+      path: /rest/api/3/issue/*/remotelink
+  - allow:
+      method: POST
+      path: /rest/api/3/issue/*/transitions
+  - allow:
+      method: PUT
+      path: /rest/api/3/issue/*/assignee
+# API gateway host — REQUIRED for scoped tokens. Same allow-list, prefixed
+# with /ex/jira/{cloudId}.
+- host: api.atlassian.com
+  port: 443
+  protocol: rest
+  enforcement: enforce
+  rules:
+  - allow:
+      method: GET
+      path: /ex/jira/*/rest/api/3/**
+  - allow:
+      method: GET
+      path: /ex/jira/*/rest/agile/1.0/**
+  - allow:
+      method: POST
+      path: /ex/jira/*/rest/api/3/search/jql
+  - allow:
+      method: POST
+      path: /ex/jira/*/rest/api/3/issue
+  - allow:
+      method: PUT
+      path: /ex/jira/*/rest/api/3/issue/*
+  - allow:
+      method: POST
+      path: /ex/jira/*/rest/api/3/issue/*/comment
+  - allow:
+      method: POST
+      path: /ex/jira/*/rest/api/3/issue/*/remotelink
+  - allow:
+      method: POST
+      path: /ex/jira/*/rest/api/3/issue/*/transitions
+  - allow:
+      method: PUT
+      path: /ex/jira/*/rest/api/3/issue/*/assignee
+binaries:
+- /usr/bin/curl
+- /usr/local/bin/curl
+inference_capable: false

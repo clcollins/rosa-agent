@@ -63,6 +63,37 @@ profile composes its own endpoints with two-writes-only (comment + remotelink) m
 enforcement; a coarse read-write block here would union over and defeat that restriction. Attach
 the Jira provider to grant Jira access rather than adding it to the policy. WDYT?
 
+### Provider Profiles
+
+Provider profiles are custom OpenShell provider definitions that declare how a credential is
+injected into a sandbox and, for `rest`-type providers, exactly which endpoints/methods/paths the
+sandbox proxy will allow. They are stored in this repo under `provider-profiles/` and imported with:
+
+```bash
+openshell provider profile lint -f provider-profiles/<profile>.yaml
+openshell provider profile import -f provider-profiles/<profile>.yaml
+```
+
+Currently there is one profile:
+
+  * **`atlassian-jira.yaml`** — Jira Cloud access for sandboxed agents, with a deliberately narrow
+    allow-list:
+    * **Reads** — everything under `GET /rest/api/3/**` and `GET /rest/agile/1.0/**` (get issue,
+      comments, transitions, editmeta/createmeta, field IDs, projects, and `/myself`), plus
+      unauthenticated `GET /_edge/tenant_info` for cloudId discovery.
+    * **Writes** — enumerated explicitly and narrowly: JQL search (`POST .../search/jql`), create
+      issue, edit issue, comment, add remote (web) link, transition, and self-assign. Deletes, bulk
+      operations, attachments, worklogs, watchers/votes, issue links, and admin endpoints are
+      intentionally excluded — add them as explicit rules only if a real need arises, rather than
+      widening POST/PUT with a catch-all.
+    * Rules are declared twice: once for the classic site host (`redhat.atlassian.net`) and once for
+      the API-gateway host (`api.atlassian.com`, prefixed with `/ex/jira/{cloudId}`) required by
+      scoped tokens.
+    * **Credentials/config** — only `JIRA_API_TOKEN` is a secret managed by the profile; it becomes
+      an opaque, proxy-resolved placeholder inside the sandbox. `JIRA_EMAIL` and `JIRA_BASE_URL` are
+      **not** secrets and must be passed as plain `--env` values at sandbox creation time (custom
+      profiles have no mechanism to expose `--config` values as sandbox env vars).
+
 ### HyperShell Service Account
 
 Service account can be created with:
@@ -223,7 +254,9 @@ openshell provider create --name "rosa-agent-jira" \
   --config JIRA_BASE_URL="https://redhat.atlassian.net"
 ```
 
-Note: The `atlassian-jira` Provider Profile is a custom profile.
+Note: The `atlassian-jira` Provider Profile is a custom profile, defined in this repo at
+`provider-profiles/atlassian-jira.yaml`. See the [Provider Profiles](#provider-profiles) section
+for a summary of what it allows and how to import it.
 
 ```txt
 Provider:
