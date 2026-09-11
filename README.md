@@ -34,6 +34,35 @@ Future consideations should include perhaps a non-Golang/language Boilerplate [o
   * Service accounts are supported and created using the "Service Account" tab at the top
   * Service accounts expire every 90 days
 
+### Policies
+
+Sandbox behavior is governed by a HyperShell policy file (`/etc/openshell/policy.yaml` in the
+image). The default policy shipped in this repo lives at `policies/default.yaml`.
+
+The default policy is a deny-by-default egress and filesystem policy — the sandbox can only reach
+the hosts explicitly listed, and each rule pins the specific binaries allowed to make those calls.
+It defines two things:
+
+  * **`filesystem_policy`** — includes the workdir, and grants read-write to `/tmp` and `/dev/null`.
+    `/dev/null` must be declared explicitly, otherwise bash login shells fail silently when Landlock
+    blocks `/etc/profile` redirections. Baseline paths (`/usr`, `/lib`, `/etc`, `/proc`, `/tmp`,
+    `/dev/urandom`) are added automatically by the supervisor.
+  * **`network_policies`** — per-service egress allow-lists, each scoped to specific binaries
+    (`/usr/bin/claude`, `git`, `gh`, `glab`, `go`, `curl`) with `enforce` enforcement:
+    * **Model inference** — Bedrock (`bedrock-runtime.us-east-2`, SigV4-signed), Anthropic API
+      (`api.anthropic.com`, for Claude Code WebFetch/WebSearch), and Google Vertex AI
+      (`oauth2.googleapis.com`, `aiplatform.googleapis.com`).
+    * **GitHub** — read-write to `api.github.com` and `github.com`; read-only to
+      `codeload.github.com`, `objects.githubusercontent.com`, and GitHub Actions hosts (CI status).
+    * **GitLab** — read-write to `gitlab.cee.redhat.com` (git + `glab`).
+    * **Go tooling** — read-only to `proxy.golang.org`, `sum.golang.org`, and `pkg.go.dev`.
+    * **Reference / CI** — read-only to Red Hat docs, Konflux, Codecov, and Prow.
+
+Note: Jira egress is intentionally **not** in this baked policy. The `atlassian-jira` provider
+profile composes its own endpoints with two-writes-only (comment + remotelink) method/path
+enforcement; a coarse read-write block here would union over and defeat that restriction. Attach
+the Jira provider to grant Jira access rather than adding it to the policy. WDYT?
+
 ### HyperShell Service Account
 
 Service account can be created with:

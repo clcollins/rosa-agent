@@ -1,0 +1,223 @@
+version: 1
+# Filesystem policy: /dev/null must be explicitly writable or bash login shells
+# fail silently (Landlock blocks /etc/profile redirections, producing the
+# "/dev/null: Permission denied" noise seen at sandbox startup).
+# The supervisor adds /usr, /lib, /etc, /proc, /tmp, /dev/urandom automatically
+# as baseline paths; /dev/null is not in that set and must be declared here.
+filesystem_policy:
+  include_workdir: true
+  read_only: []
+  read_write:
+    - /tmp
+    - /dev/null
+
+network_policies:
+  bedrock_inference_sigv4:
+    name: bedrock-inference-sigv4
+    endpoints:
+      - host: bedrock-runtime.us-east-2.amazonaws.com
+        port: 443
+        access: read-write
+        protocol: rest
+        enforcement: enforce
+        credential_signing: sigv4
+        signing_service: bedrock
+        signing_region: us-east-2
+    binaries:
+      - path: /usr/bin/claude
+  github_api:
+    name: github-api
+    endpoints:
+      - host: api.github.com
+        port: 443
+        access: read-write
+        protocol: rest
+        enforcement: enforce
+    binaries:
+      - path: /usr/bin/gh
+      - path: /usr/bin/git
+      - path: /usr/bin/claude
+  github_git:
+    name: github-git
+    endpoints:
+      - host: github.com
+        port: 443
+        access: read-write
+        protocol: rest
+        enforcement: enforce
+      - host: codeload.github.com
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+    binaries:
+      - path: /usr/bin/git
+      - path: /usr/bin/claude
+  # Claude Code WebFetch safety preflight and WebSearch backend
+  anthropic_api:
+    name: anthropic-api
+    endpoints:
+      - host: api.anthropic.com
+        port: 443
+        access: read-write
+        protocol: rest
+        enforcement: enforce
+    binaries:
+      - path: /usr/bin/claude
+      - path: /usr/bin/curl
+  github_assets:
+    name: github-assets
+    endpoints:
+      - host: objects.githubusercontent.com
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+    binaries:
+      - path: /usr/bin/claude
+      - path: /usr/bin/curl
+  # CI status monitoring (read-only)
+  github_actions:
+    name: github-actions
+    endpoints:
+      - host: actions.githubusercontent.com
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+      - host: "*.actions.githubusercontent.com"
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+    binaries:
+      - path: /usr/bin/claude
+      - path: /usr/bin/curl
+  # Red Hat documentation reference
+  redhat_docs:
+    name: redhat-docs
+    endpoints:
+      - host: docs.redhat.com
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+    binaries:
+      - path: /usr/bin/claude
+      - path: /usr/bin/curl
+  konflux:
+    name: konflux
+    endpoints:
+      - host: "**.stone-prd-rh01.pg1f.p1.openshiftapps.com"
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+      - host: "**.kflux-prd-rh02.0fk9.p1.openshiftapps.com"
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+      - host: "**.kflux-prd-rh03.nnv1.p1.openshiftapps.com"
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+    binaries:
+      - path: /usr/bin/claude
+      - path: /usr/bin/curl
+  codecov:
+    name: codecov
+    endpoints:
+      - host: app.codecov.io
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+    binaries:
+      - path: /usr/bin/claude
+      - path: /usr/bin/curl
+  prow:
+    name: prow
+    endpoints:
+      - host: prow.ci.openshift.org
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+    binaries:
+      - path: /usr/bin/claude
+      - path: /usr/bin/curl
+  # NOTE: Jira egress is intentionally NOT in this baked policy. With
+  # providers_v2_enabled=true the atlassian-jira provider profile composes its
+  # own endpoints with two-writes-only (comment + remotelink) method/path
+  # enforcement. A coarse read-write block here would union over — and defeat —
+  # that restriction (a PUT/issue-edit would reach Jira instead of being denied
+  # at the proxy). Attach the jira provider to grant Jira access; do not add it
+  # here.
+  gitlab_cee:
+    name: gitlab-cee
+    endpoints:
+      - host: gitlab.cee.redhat.com
+        port: 443
+        access: read-write
+        protocol: rest
+        enforcement: enforce
+    binaries:
+      - path: /usr/bin/git
+      - path: /usr/local/bin/glab
+      - path: /usr/bin/claude
+  # Google Vertex AI — Claude Code via Vertex backend
+  # Endpoints from built-in google-vertex-ai provider profile
+  vertex_ai:
+    name: vertex-ai
+    endpoints:
+      - host: oauth2.googleapis.com
+        port: 443
+        access: read-write
+        protocol: rest
+        enforcement: enforce
+      - host: aiplatform.googleapis.com
+        port: 443
+        access: read-write
+        protocol: rest
+        enforcement: enforce
+      - host: "*.aiplatform.googleapis.com"
+        port: 443
+        access: read-write
+        protocol: rest
+        enforcement: enforce
+      - host: aiplatform.us.rep.googleapis.com
+        port: 443
+        access: read-write
+        protocol: rest
+        enforcement: enforce
+      - host: aiplatform.eu.rep.googleapis.com
+        port: 443
+        access: read-write
+        protocol: rest
+        enforcement: enforce
+    binaries:
+      - path: /usr/bin/claude
+      - path: /usr/bin/curl
+  # Go module proxy, checksum verification, and package documentation
+  go_modules:
+    name: go-modules
+    endpoints:
+      - host: proxy.golang.org
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+      - host: sum.golang.org
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+      - host: pkg.go.dev
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+    binaries:
+      - path: /usr/local/bin/go
