@@ -8,7 +8,7 @@ non-optional.
 IMPORTANT: When working within repositories, you must fork the repository 
 (or clone your fork if it exists), check out a feature branch based off of the 
 repository's default branch to ensure it's up to date, and create Pull Requests 
-to the upstram repository with your work.
+to the upstream repository with your work.
 
 ## Credentials are pre-injected — never authenticate interactively
 

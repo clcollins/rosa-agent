@@ -220,4 +220,9 @@ network_policies:
         protocol: rest
         enforcement: enforce
     binaries:
-      - path: /usr/local/bin/go
+      # go-toolset (dnf) installs to /usr/bin/go, not /usr/local/bin/go — see
+      # Containerfile. The wrong path here silently defeated this rule: the
+      # proxy allow-list is matched per-binary-path, so the real /usr/bin/go
+      # never matched and every `go get`/`go mod download` was denied with a
+      # policy 403 despite this rule existing.
+      - path: /usr/bin/go
