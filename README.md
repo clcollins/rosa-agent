@@ -381,3 +381,78 @@ Note: Sandboxes must be run with the `ANTHROPIC_BASE_URL` and `ANTHROPIC_API_KEY
   --env=ANTHROPIC_API_KEY=unused
 ```
 
+## Konflux configuration
+
+ROSA-Agent's Konflux resources live in the `rosa-tenant` namespace on the
+`kflux-prd-rh02` cluster. They are managed via GitOps in the
+[`releng/konflux-release-data`](https://gitlab.cee.redhat.com/releng/konflux-release-data)
+repository and deployed by ArgoCD once merged to `main`. The links below point
+at the files as they will exist on `main` after the onboarding MR merges.
+
+### Image build
+
+A Konflux `Application` + `Component` builds the ROSA-Agent container image from
+this repository (`Containerfile` on the `main` branch), publishing to
+`quay.io/redhat-user-workloads/rosa-tenant/rosa-agent`. The build itself is set
+up in this repo via Pipelines-as-Code (`.tekton/`); the tenant config only
+declares the Application/Component/ImageRepository and release wiring.
+
+Built from a shared base via a kustomize overlay:
+
+- [`overlay/rosa-agent/main/kustomization.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/kustomization.yaml)
+- [`application-patch.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/application-patch.yaml)
+- [`component-patch.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/component-patch.yaml)
+  — git URL, `Containerfile`, `main` revision
+- [`image-repository.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/image-repository.yaml)
+  — `rosa-tenant/rosa-agent`, public
+- [`releaseplan-patch.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/releaseplan-patch.yaml)
+- [`integrationtestscenario-patch.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/integrationtestscenario-patch.yaml)
+
+### Scheduled jobs
+
+Two plain `batch/v1` CronJobs run `make` targets from this repository. Each has
+a dedicated `ServiceAccount` bound to `konflux-maintainer-user-actions`, and
+consumes `OPENSHELL_OIDC_CLIENT_SECRET` (see below) as an environment variable.
+
+| Job | Schedule | Command | ServiceAccount |
+| --- | --- | --- | --- |
+| `sop-improve` | nightly (`0 3 * * *`) | `make sop-improve` | `rosa-agent-bot-0` |
+| `sdlc-maturity` | weekly, Sun (`0 4 * * 0`) | `make sdlc-maturity` | `rosa-agent-bot-1` |
+
+- [`sop-improve-cronjob.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/sop-improve-cronjob.yaml)
+  / [`sop-improve-rbac.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/sop-improve-rbac.yaml)
+- [`sdlc-maturity-cronjob.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/sdlc-maturity-cronjob.yaml)
+  / [`sdlc-maturity-rbac.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/sdlc-maturity-rbac.yaml)
+
+### Vault-injected credential
+
+`OPENSHELL_OIDC_CLIENT_SECRET` is pulled from Vault by the External Secrets
+Operator using an AppRole, and materialized as a Kubernetes Secret named
+`openshell-oidc` that the CronJobs mount. It reads the `hypershell-oidc-client-secret`
+field of `rosa-agent-konflux` on the `osd-sre` Vault mount (`vault kv get -mount=osd-sre
+-field=hypershell-oidc-client-secret rosa-agent-konflux`), via a dedicated
+`osd-sre-vault` `SecretStore`.
+
+- [`secretstore/osd-sre-vault.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/secretstore/osd-sre-vault.yaml)
+  — `SecretStore` for the `osd-sre` mount (AppRole `rosa-agent`)
+- [`externalsecret/openshell-oidc.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/externalsecret/openshell-oidc.yaml)
+  — `ExternalSecret` producing the `openshell-oidc` Secret
+
+Bootstrapping still required outside the GitOps repo: create the `rosa-agent`
+Vault AppRole and set its `roleId` in `osd-sre-vault.yaml`, and create the
+`osd-sre-vault-app-role-secret` Kubernetes Secret (key `secret-id`) in the
+`rosa-tenant` namespace.
+
+The Vault side of that AppRole is managed in app-interface. A
+[replication policy](https://gitlab.cee.redhat.com/service/app-interface/-/blob/master/data/services/vault.devshift.net/config/ci-ext/policies/replication-policies/osd-sre-rosa-agent-replication-policy.yml)
+copies just the `osd-sre/rosa-agent-konflux` secret from the primary
+`vault.devshift.net` to `vault.ci.ext.devshift.net`, where Konflux authenticates.
+The [`rosa-agent` AppRole](https://gitlab.cee.redhat.com/service/app-interface/-/blob/master/data/services/vault.devshift.net/config/ci-ext/roles/approles/rosa-agent-approle.yml)
+is granted read on that replicated secret by its
+[access policy](https://gitlab.cee.redhat.com/service/app-interface/-/blob/master/data/services/vault.devshift.net/config/ci-ext/policies/rosa-agent-policy.yml),
+and its generated `secret_id` is published to `app-sre/approles/rosa-agent-approle`.
+A [creds policy](https://gitlab.cee.redhat.com/service/app-interface/-/blob/master/data/services/vault.devshift.net/config/ci-ext/policies/rosa-agent-approle-creds-policy.yml)
+plus [OIDC permission](https://gitlab.cee.redhat.com/service/app-interface/-/blob/master/data/dependencies/vault/permissions/oidc/ci-ext/rosa-agent.yml)
+let the `team-rosa-act-members` team read that `secret_id` to seed the
+`osd-sre-vault-app-role-secret` Kubernetes Secret above.
+
