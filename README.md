@@ -238,6 +238,12 @@ openshell provider create --name rosa-agent-github \
 
 Custom `Jira` skill is baked into the image to tell the sanbox agents how to read and comment on Jira cards.
 
+Note: The source for that skill lives in this repo at `sandbox/skills/jira/SKILL.md`. It teaches the
+sandbox agent to detect the token type (scoped Bearer against `api.atlassian.com` vs. classic Basic
+against `redhat.atlassian.net`), derive the tenant cloudId, and call the Jira Cloud REST API through
+a `jira` curl helper — staying within the reads/comment/remotelink operations the
+[`atlassian-jira` provider profile](#provider-profiles) permits.
+
   * ROSA-Agent is a real user in Jira: https://home.atlassian.com/o/4k7c08c0-9kb0-1aca-k606-d1417cc24104/people/712020:866a7c2a-31c4-45eb-bcc5-7edceb696a97?cloudId=2b9e35e3-6bd3-4cec-b838-f4249ee02432
   * Credentials, including 2fa, are stored in Vault: https://vault.devshift.net/ui/vault/secrets/osd-sre
   * Github 2fa code generation is done with: `vault read totp/osd-sre/code/rosa-agent-jira-2fa`
