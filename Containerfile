@@ -17,10 +17,10 @@ FROM ghcr.io/nvidia/openshell-community/sandboxes/base:latest AS nvidia-skills
 # Shell mode: CMD defaults to bash; sandbox stays alive for interactive
 # exec and sub-agent work (container-make style).
 #
-# Build context is components/openshell (parent dir) so policies/ is reachable:
-#   podman build --tag openshell-sandbox:latest \
-#     --file components/openshell/sandbox/Containerfile \
-#     components/openshell
+# Build context is the repo root so policies/, provider-profiles/, and sandbox/
+# are reachable:
+#   podman build --tag rosa-agent:latest --file Containerfile .
+# (or simply `make sandbox-build`)
 # ---------------------------------------------------------------------------
 
 # ---- Stage 1: binary downloads with SHA256 verification ----

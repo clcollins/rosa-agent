@@ -1,6 +1,6 @@
 # ROSA-Agent
 
-ROSA-Agent is a HyperShell gateway and a collection of service accounts and provider credentials for automating ROSA agentic tasks, including recurring scheduled repository maintenance, automated feature implementation and human-interactive sessions.
+ROSA-Agent is a HyperShell gateway and a collection of service accounts and provider credentials for automating ROSA agentic tasks, including recurring scheduled repository maintenance, automated feature implementation and human-interactive sessions. It is owned and maintained by the [ROSA Agentic DevX](https://github.com/openshift-online/rosa-agentic-devx) team.
 
   * Scheduled jobs are Konflux cron jobs in the `rosa-tenant`
   * Automated feature implementation are one-shot, non-interactive ("Read this Jira and implement it")
