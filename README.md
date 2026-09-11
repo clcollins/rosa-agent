@@ -267,7 +267,7 @@ a `jira` curl helper — staying within the reads/comment/remotelink operations 
 Hypershell Provider config:
 
 ```bash
-export JIRA_API_TOKEN=$(vault)
+export JIRA_API_TOKEN=$(vault kv get -mount=osd-sre -field="jira-token" rosa-agent)
 openshell provider create --name "rosa-agent-jira" \
   --type atlassian-jira \
   --credential JIRA_API_TOKEN \
@@ -318,7 +318,7 @@ Provider:
 ```
 
 ```bash
-export GOOGLE_SERVICE_ACCOUNT_KEY=$(vault ) 
+export GOOGLE_SERVICE_ACCOUNT_KEY=$(vault kv get -mount=osd-sre -field="google-rosa-general-service-account-keyfile" rosa-agent)
 openshell provider create --name "rosa-general-vertex" \
   --type google-vertex-ai \
   --credential GOOGLE_SERVICE_ACCOUNT_KEY \
