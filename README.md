@@ -26,6 +26,21 @@ The sandbox image (`Containerfile`) is a multi-stage build on the Red Hat `regis
 
 Future consideations should include perhaps a non-Golang/language Boilerplate [openshift/boilerplate](https://github.com/openshift/boilerplate) image scaffolding for building/maintaining.
 
+## Jobs
+
+Jobs are non-interactive, scheduled tasks the agent runs (typically as Konflux cron jobs) using a
+baked-in skill that scopes the work. Job skills live under `sandbox/skills/`.
+
+  * **`job-sop-improve`** (`sandbox/skills/job-sop-improve/SKILL.md`) — grooms one stale SOP in
+    [openshift/ops-sop](https://github.com/openshift/ops-sop) per run. It first fast-forwards the
+    agent's fork to upstream's default branch, then selects a single SOP at random from those not
+    updated in the last 3 months and not already in an open PR. Stale SOPs (3 months–3 years old) are
+    improved by wrapping that repo's own `/sop-improve auto-commit` skill and opening a PR (labeled
+    `ROSA-Agent`) from a feature branch. SOPs untouched for over 3 years are not edited — instead the
+    job files a GitHub Issue against upstream suggesting the SOP be evaluated as potentially obsolete.
+    Any failure that stops the job opens an Issue against this repo (`openshift-online/rosa-agent`).
+    This job is scheduled as a Konflux cron job in the `rosa-tenant` tenant.
+
 ## Hypershell Gateway
   
   https://hypershell.apps.rosa.hcmais01ue1.s9m2.p3.openshiftapps.com/gateways/3I94YwZezpdI4AEzuxtJnsVYGVt
