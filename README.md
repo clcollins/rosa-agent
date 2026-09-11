@@ -24,6 +24,8 @@ Future:
 
 The sandbox image (`Containerfile`) is a multi-stage build on the Red Hat `registry.access.redhat.com/ubi9/ubi:9.8` base image rather than the Ubuntu-based NVIDIA OpenShell-Community image. Even so, it inherits the OpenShell scaffold from the NVIDIA base image — the agent skills (e.g. `github/SKILL.md`) are extracted via `COPY --from` and merged with our own skills under `/sandbox/.agents/skills/`, and the build mirrors the NVIDIA user model (supervisor + sandbox users, `HOME=/sandbox`, `/etc/openshell/policy.yaml`). On top of UBI9 it layers the `go-toolset` RPM and pinned Go tooling, Claude Code from Anthropic's signed RPM repo, and supporting CLIs (gh, golangci-lint, staticcheck, shellcheck), then pre-seeds Claude Code trust state and Bedrock/Jira runtime defaults so the sandbox runs non-interactively. WDYT?
 
+Future consideations should include perhaps a non-Golang/language Boilerplate [openshift/boilerplate](https://github.com/openshift/boilerplate) image scaffolding for building/maintaining.
+
 ## Hypershell Gateway
   
   https://hypershell.apps.rosa.hcmais01ue1.s9m2.p3.openshiftapps.com/gateways/3I94YwZezpdI4AEzuxtJnsVYGVt
@@ -172,7 +174,7 @@ openshell provider create --name rosa-agent-github \
   --credential GITHUB_TOKEN
 ```
 
-### Jira
+## Jira
 
 Custom `Jira` skill is baked into the image to tell the sanbox agents how to read and comment on Jira cards.
 
@@ -213,7 +215,7 @@ Note: Sandboxes must be run with the Config keys as `ENV` variables.  There is n
   --env JIRA_BASE_URL="https://redhat.atlassian.net"      
 ```
 
-### Vertex
+## Vertex
 
   * ROSA-Agent has a service account under the `rosa-general` GCP account.
   * Credentials are stored in Vault: https://vault.devshift.net/ui/vault/secrets/osd-sre
