@@ -1,11 +1,11 @@
 # See the OWNERS docs at https://go.k8s.io/owners
 
 approvers:
-- chcollin
+- clcollins
 - tnierman
-- alexasmi
+- AlexSmithGH
 
 reviewers:
-- chcollin
+- clcollins
 - tnierman
-- alexasmi
+- AlexSmithGH
