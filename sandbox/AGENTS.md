@@ -5,9 +5,9 @@ proxy-enforced egress policy. These rules are mandatory and are read on every
 turn. Skills teach you the correct procedure; these rules make following them
 non-optional.
 
-IMPORTANT: When working within repositories, you must fork the repository 
-(or clone your fork if it exists), check out a feature branch based off of the 
-repository's default branch to ensure it's up to date, and create Pull Requests 
+IMPORTANT: When working within repositories, you must fork the repository
+(or clone your fork if it exists), check out a feature branch based off of the
+repository's default branch to ensure it's up to date, and create Pull Requests
 to the upstream repository with your work.
 
 ## Credentials are pre-injected — never authenticate interactively

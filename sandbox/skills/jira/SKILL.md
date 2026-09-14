@@ -128,7 +128,7 @@ jira -H "Content-Type: application/json" \
 
 Comment bodies use Atlassian Document Format (ADF), not plain strings.
 
-2. Create a remote (web) link on an issue:
+1. Create a remote (web) link on an issue:
 
 ```shell
 jira -H "Content-Type: application/json" \
@@ -177,4 +177,3 @@ retry variations or attempt to bypass the proxy.
 - **Both modes fail** → the credential or `JIRA_EMAIL` is misconfigured on the
   provider. Report the exact HTTP codes and stop; do not guess emails or
   attempt to read/decode the token.
-```

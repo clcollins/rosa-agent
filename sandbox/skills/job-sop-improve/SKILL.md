@@ -164,7 +164,7 @@ For a stale-but-not-obsolete SOP:
    the selected SOP. Use the invocation the freshly-cloned repo documents for
    `/sop-improve` — it is the source of truth for arguments and behavior:
 
-   ```
+   ```text
    /sop-improve auto-commit <path/to/sop.md>
    ```
 
@@ -235,14 +235,14 @@ normally and do not file a failure Issue.
 
 ## Guardrails
 
-- One SOP per run. Never batch-edit multiple SOPs.
-- Never push to upstream directly and never push to your fork's default branch
+* One SOP per run. Never batch-edit multiple SOPs.
+* Never push to upstream directly and never push to your fork's default branch
   except the fast-forward sync in the precondition. All work goes on a feature
   branch → PR.
-- Never force-push. Never bypass `--ff-only` with a merge/rebase to "fix" a
+* Never force-push. Never bypass `--ff-only` with a merge/rebase to "fix" a
   diverged fork — file a failure Issue (see *On any failure*) and stop.
-- Never invent SOP paths, dates, or the default branch name — derive them from
+* Never invent SOP paths, dates, or the default branch name — derive them from
   the synced clone and from `gh` against upstream.
-- If any required step is blocked by policy (HTTP 403 / `policy_denied`), do not
+* If any required step is blocked by policy (HTTP 403 / `policy_denied`), do not
   retry variations or attempt to bypass the proxy — file a failure Issue against
   `openshift-online/rosa-agent` (see *On any failure*) and stop.

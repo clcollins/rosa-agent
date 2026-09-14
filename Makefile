@@ -11,7 +11,17 @@ SANDBOX_TAG ?= $(shell git rev-parse --short=7 HEAD)
 SANDBOX_CONTAINERFILE := Containerfile
 SANDBOX_CONTEXT := .
 
-.PHONY: sandbox-build sandbox-push require-sandbox-image
+.PHONY: lint markdown-lint sandbox-build sandbox-push require-sandbox-image
+
+# Parent lint target: runs every linter. The OpenShift CI `ci/prow/lint`
+# presubmit runs `make lint`. Add new linters (shell, yaml, ...) as their own
+# targets and list them as prerequisites here.
+lint: markdown-lint
+
+# Lint all Markdown docs. Requires markdownlint-cli2 (npm i -g markdownlint-cli2).
+# Rules live in .markdownlint-cli2.yaml.
+markdown-lint:
+	markdownlint-cli2 "**/*.md"
 
 # Local build tag when no image is given, so `make sandbox-build` works without
 # a registry. A push always requires SANDBOX_IMAGE (see require-sandbox-image).

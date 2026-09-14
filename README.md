@@ -4,23 +4,23 @@
 
 ROSA-Agent is a HyperShell gateway and a collection of service accounts and provider credentials for automating ROSA agentic tasks, including recurring scheduled repository maintenance, automated feature implementation and human-interactive sessions. It is owned and maintained by the [ROSA Agentic DevX](https://github.com/openshift-online/rosa-agentic-devx) team.
 
-  * Scheduled jobs are Konflux cron jobs in the `rosa-tenant`
-  * Automated feature implementation are one-shot, non-interactive ("Read this Jira and implement it")
- 
+* Scheduled jobs are Konflux cron jobs in the `rosa-tenant`
+* Automated feature implementation are one-shot, non-interactive ("Read this Jira and implement it")
+
 ## Open Questions
 
 What triggers are available?
 
 Currently:
 
-  * Konflux cron jobs with a HyperShell Service Account credentials
-  * Human interactive and non-interactive with OpenShell CLI
+* Konflux cron jobs with a HyperShell Service Account credentials
+* Human interactive and non-interactive with OpenShell CLI
 
 Future:
 
-  * Jira NEW card creation?
-  * Webhook?
-  * Chai-bot/Slack?
+* Jira NEW card creation?
+* Webhook?
+* Chai-bot/Slack?
 
 ## UBI9 Base Image
 
@@ -33,7 +33,7 @@ Future consideations should include perhaps a non-Golang/language Boilerplate [o
 Jobs are non-interactive, scheduled tasks the agent runs (typically as Konflux cron jobs) using a
 baked-in skill that scopes the work. Job skills live under `sandbox/skills/`.
 
-  * **`job-sop-improve`** (`sandbox/skills/job-sop-improve/SKILL.md`) — grooms one stale SOP in
+* **`job-sop-improve`** (`sandbox/skills/job-sop-improve/SKILL.md`) — grooms one stale SOP in
     [openshift/ops-sop](https://github.com/openshift/ops-sop) per run. It first fast-forwards the
     agent's fork to upstream's default branch, then selects a single SOP at random from those not
     updated in the last 3 months and not already in an open PR. Stale SOPs (3 months–3 years old) are
@@ -45,11 +45,11 @@ baked-in skill that scopes the work. Job skills live under `sandbox/skills/`.
 
 ## Hypershell Gateway
   
-  https://hypershell.apps.rosa.hcmais01ue1.s9m2.p3.openshiftapps.com/gateways/3I94YwZezpdI4AEzuxtJnsVYGVt
+  <https://hypershell.apps.rosa.hcmais01ue1.s9m2.p3.openshiftapps.com/gateways/3I94YwZezpdI4AEzuxtJnsVYGVt>
 
-  * This gateway is owned by Chris Collins right now - there's no "shared" gateway at the moment.
-  * Service accounts are supported and created using the "Service Account" tab at the top
-  * Service accounts expire every 90 days
+* This gateway is owned by Chris Collins right now - there's no "shared" gateway at the moment.
+* Service accounts are supported and created using the "Service Account" tab at the top
+* Service accounts expire every 90 days
 
 ### Policies
 
@@ -60,20 +60,20 @@ The default policy is a deny-by-default egress and filesystem policy — the san
 the hosts explicitly listed, and each rule pins the specific binaries allowed to make those calls.
 It defines two things:
 
-  * **`filesystem_policy`** — includes the workdir, and grants read-write to `/tmp` and `/dev/null`.
+* **`filesystem_policy`** — includes the workdir, and grants read-write to `/tmp` and `/dev/null`.
     `/dev/null` must be declared explicitly, otherwise bash login shells fail silently when Landlock
     blocks `/etc/profile` redirections. Baseline paths (`/usr`, `/lib`, `/etc`, `/proc`, `/tmp`,
     `/dev/urandom`) are added automatically by the supervisor.
-  * **`network_policies`** — per-service egress allow-lists, each scoped to specific binaries
+* **`network_policies`** — per-service egress allow-lists, each scoped to specific binaries
     (`/usr/bin/claude`, `git`, `gh`, `glab`, `go`, `curl`) with `enforce` enforcement:
-    * **Model inference** — Bedrock (`bedrock-runtime.us-east-2`, SigV4-signed), Anthropic API
+  * **Model inference** — Bedrock (`bedrock-runtime.us-east-2`, SigV4-signed), Anthropic API
       (`api.anthropic.com`, for Claude Code WebFetch/WebSearch), and Google Vertex AI
       (`oauth2.googleapis.com`, `aiplatform.googleapis.com`).
-    * **GitHub** — read-write to `api.github.com` and `github.com`; read-only to
+  * **GitHub** — read-write to `api.github.com` and `github.com`; read-only to
       `codeload.github.com`, `objects.githubusercontent.com`, and GitHub Actions hosts (CI status).
-    * **GitLab** — read-write to `gitlab.cee.redhat.com` (git + `glab`).
-    * **Go tooling** — read-only to `proxy.golang.org`, `sum.golang.org`, and `pkg.go.dev`.
-    * **Reference / CI** — read-only to Red Hat docs, Konflux, Codecov, and Prow.
+  * **GitLab** — read-write to `gitlab.cee.redhat.com` (git + `glab`).
+  * **Go tooling** — read-only to `proxy.golang.org`, `sum.golang.org`, and `pkg.go.dev`.
+  * **Reference / CI** — read-only to Red Hat docs, Konflux, Codecov, and Prow.
 
 Note: Jira egress is intentionally **not** in this baked policy. The `atlassian-jira` provider
 profile composes its own endpoints with two-writes-only (comment + remotelink) method/path
@@ -93,20 +93,20 @@ openshell provider profile import -f provider-profiles/<profile>.yaml
 
 Currently there is one profile:
 
-  * **`atlassian-jira.yaml`** — Jira Cloud access for sandboxed agents, with a deliberately narrow
+* **`atlassian-jira.yaml`** — Jira Cloud access for sandboxed agents, with a deliberately narrow
     allow-list:
-    * **Reads** — everything under `GET /rest/api/3/**` and `GET /rest/agile/1.0/**` (get issue,
+  * **Reads** — everything under `GET /rest/api/3/**` and `GET /rest/agile/1.0/**` (get issue,
       comments, transitions, editmeta/createmeta, field IDs, projects, and `/myself`), plus
       unauthenticated `GET /_edge/tenant_info` for cloudId discovery.
-    * **Writes** — enumerated explicitly and narrowly: JQL search (`POST .../search/jql`), create
+  * **Writes** — enumerated explicitly and narrowly: JQL search (`POST .../search/jql`), create
       issue, edit issue, comment, add remote (web) link, transition, and self-assign. Deletes, bulk
       operations, attachments, worklogs, watchers/votes, issue links, and admin endpoints are
       intentionally excluded — add them as explicit rules only if a real need arises, rather than
       widening POST/PUT with a catch-all.
-    * Rules are declared twice: once for the classic site host (`redhat.atlassian.net`) and once for
+  * Rules are declared twice: once for the classic site host (`redhat.atlassian.net`) and once for
       the API-gateway host (`api.atlassian.com`, prefixed with `/ex/jira/{cloudId}`) required by
       scoped tokens.
-    * **Credentials/config** — only `JIRA_API_TOKEN` is a secret managed by the profile; it becomes
+  * **Credentials/config** — only `JIRA_API_TOKEN` is a secret managed by the profile; it becomes
       an opaque, proxy-resolved placeholder inside the sandbox. `JIRA_EMAIL` and `JIRA_BASE_URL` are
       **not** secrets and must be passed as plain `--env` values at sandbox creation time (custom
       profiles have no mechanism to expose `--config` values as sandbox env vars).
@@ -159,7 +159,7 @@ ACCESS_TOKEN=$(printf '%s' "$OPENSHELL_OIDC_CLIENT_SECRET" | \
 
 Service account config:
 
-*NOTE:* This will overwrite your personal credentials for that gateway if you perform this task in the same 
+*NOTE:* This will overwrite your personal credentials for that gateway if you perform this task in the same
 environment you use the `openshell` cli tool.  This is an OpenShell limitation - the paths are hard-coded.
 You may prefer to work with service accounts in a container instead.
 
@@ -217,7 +217,7 @@ Current User
   Scopes: 
 ```
 
-*Troubleshooting Service Account Issues*
+### Troubleshooting Service Account Issues
 
 `Error:   × No such file or directory (os error 2)` when running a sandbox
 
@@ -277,16 +277,16 @@ mount/path/field overrides, `--no-browser`, `--no-vault-login`, etc.).
 
 ## Github
 
-  * ROSA-Agent is a real user in Github: https://github.com/rosa-agent  
-  * Credentials, including 2fa, are stored in Vault: https://vault.devshift.net/ui/vault/secrets/osd-sre
-  * Github 2fa code generation is done with: `vault read totp/osd-sre/code/rosa-agent-github-2fa`
-  * OpenShift org membership is managed by DPP
-  * Openshift-Online org membership is managed in the `hybrid-platforms/org` repo in Gitlab.
+* ROSA-Agent is a real user in Github: <https://github.com/rosa-agent>  
+* Credentials, including 2fa, are stored in Vault: <https://vault.devshift.net/ui/vault/secrets/osd-sre>
+* Github 2fa code generation is done with: `vault read totp/osd-sre/code/rosa-agent-github-2fa`
+* OpenShift org membership is managed by DPP
+* Openshift-Online org membership is managed in the `hybrid-platforms/org` repo in Gitlab.
 
 ### Token Considerations
 
-  * Fine-grainted tokens are preferred and need only `contents:read`, `issues:read&write` and `pull_request:read&write` but require approval by the ORG owners, and must be created in that org
-  * Classic PAT tokens work out-of the box with `repo` permissions (top-level check-box).  We're using this as a workaround until a fine-grained token is approved
+* Fine-grainted tokens are preferred and need only `contents:read`, `issues:read&write` and `pull_request:read&write` but require approval by the ORG owners, and must be created in that org
+* Classic PAT tokens work out-of the box with `repo` permissions (top-level check-box).  We're using this as a workaround until a fine-grained token is approved
   
 Hypershell Provider config:
 
@@ -306,10 +306,10 @@ against `redhat.atlassian.net`), derive the tenant cloudId, and call the Jira Cl
 a `jira` curl helper — staying within the reads/comment/remotelink operations the
 [`atlassian-jira` provider profile](#provider-profiles) permits.
 
-  * ROSA-Agent is a real user in Jira: https://home.atlassian.com/o/4k7c08c0-9kb0-1aca-k606-d1417cc24104/people/712020:866a7c2a-31c4-45eb-bcc5-7edceb696a97?cloudId=2b9e35e3-6bd3-4cec-b838-f4249ee02432
-  * Credentials, including 2fa, are stored in Vault: https://vault.devshift.net/ui/vault/secrets/osd-sre
-  * Github 2fa code generation is done with: `vault read totp/osd-sre/code/rosa-agent-jira-2fa`
-  * The API Token expires every 90 days
+* ROSA-Agent is a real user in Jira: <https://home.atlassian.com/o/4k7c08c0-9kb0-1aca-k606-d1417cc24104/people/712020:866a7c2a-31c4-45eb-bcc5-7edceb696a97?cloudId=2b9e35e3-6bd3-4cec-b838-f4249ee02432>
+* Credentials, including 2fa, are stored in Vault: <https://vault.devshift.net/ui/vault/secrets/osd-sre>
+* Github 2fa code generation is done with: `vault read totp/osd-sre/code/rosa-agent-jira-2fa`
+* The API Token expires every 90 days
 
 Hypershell Provider config:
 
@@ -347,10 +347,9 @@ Note: Sandboxes must be run with the Config keys as `ENV` variables.  There is n
 
 ## Vertex
 
-  * ROSA-Agent has a service account under the `rosa-general` GCP account.
-  * Credentials are stored in Vault: https://vault.devshift.net/ui/vault/secrets/osd-sre
+* ROSA-Agent has a service account under the `rosa-general` GCP account.
+* Credentials are stored in Vault: <https://vault.devshift.net/ui/vault/secrets/osd-sre>
   
-
 Hypershell Provider config:
 
 ```txt
@@ -399,14 +398,14 @@ declares the Application/Component/ImageRepository and release wiring.
 
 Built from a shared base via a kustomize overlay:
 
-- [`overlay/rosa-agent/main/kustomization.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/kustomization.yaml)
-- [`application-patch.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/application-patch.yaml)
-- [`component-patch.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/component-patch.yaml)
+* [`overlay/rosa-agent/main/kustomization.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/kustomization.yaml)
+* [`application-patch.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/application-patch.yaml)
+* [`component-patch.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/component-patch.yaml)
   — git URL, `Containerfile`, `main` revision
-- [`image-repository.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/image-repository.yaml)
+* [`image-repository.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/image-repository.yaml)
   — `rosa-tenant/rosa-agent`, public
-- [`releaseplan-patch.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/releaseplan-patch.yaml)
-- [`integrationtestscenario-patch.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/integrationtestscenario-patch.yaml)
+* [`releaseplan-patch.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/releaseplan-patch.yaml)
+* [`integrationtestscenario-patch.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/overlay/rosa-agent/main/integrationtestscenario-patch.yaml)
 
 ### Scheduled jobs
 
@@ -419,9 +418,9 @@ consumes `OPENSHELL_OIDC_CLIENT_SECRET` (see below) as an environment variable.
 | `sop-improve` | nightly (`0 3 * * *`) | `make sop-improve` | `rosa-agent-bot-0` |
 | `sdlc-maturity` | weekly, Sun (`0 4 * * 0`) | `make sdlc-maturity` | `rosa-agent-bot-1` |
 
-- [`sop-improve-cronjob.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/sop-improve-cronjob.yaml)
+* [`sop-improve-cronjob.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/sop-improve-cronjob.yaml)
   / [`sop-improve-rbac.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/sop-improve-rbac.yaml)
-- [`sdlc-maturity-cronjob.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/sdlc-maturity-cronjob.yaml)
+* [`sdlc-maturity-cronjob.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/sdlc-maturity-cronjob.yaml)
   / [`sdlc-maturity-rbac.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/sdlc-maturity-rbac.yaml)
 
 ### Vault-injected credential
@@ -433,9 +432,9 @@ field of `rosa-agent-konflux` on the `osd-sre` Vault mount (`vault kv get -mount
 -field=hypershell-oidc-client-secret rosa-agent-konflux`), via a dedicated
 `osd-sre-vault` `SecretStore`.
 
-- [`secretstore/osd-sre-vault.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/secretstore/osd-sre-vault.yaml)
+* [`secretstore/osd-sre-vault.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/secretstore/osd-sre-vault.yaml)
   — `SecretStore` for the `osd-sre` mount (AppRole `rosa-agent`)
-- [`externalsecret/openshell-oidc.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/externalsecret/openshell-oidc.yaml)
+* [`externalsecret/openshell-oidc.yaml`](https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/main/tenants-config/cluster/kflux-prd-rh02/tenants/rosa-tenant/externalsecret/openshell-oidc.yaml)
   — `ExternalSecret` producing the `openshell-oidc` Secret
 
 Bootstrapping still required outside the GitOps repo: create the `rosa-agent`
@@ -455,4 +454,3 @@ A [creds policy](https://gitlab.cee.redhat.com/service/app-interface/-/blob/mast
 plus [OIDC permission](https://gitlab.cee.redhat.com/service/app-interface/-/blob/master/data/dependencies/vault/permissions/oidc/ci-ext/rosa-agent.yml)
 let the `team-rosa-act-members` team read that `secret_id` to seed the
 `osd-sre-vault-app-role-secret` Kubernetes Secret above.
-

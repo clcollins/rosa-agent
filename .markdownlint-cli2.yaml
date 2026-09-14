@@ -1,0 +1,14 @@
+# markdownlint-cli2 configuration for rosa-agent.
+# Run locally with: make markdownlint  (or: markdownlint-cli2 "**/*.md")
+config:
+  # Enforce markdownlint defaults, with a minimal set of disables:
+  # MD013 (line-length): docs contain long URLs, tables, and prose that are
+  #   not worth hard-wrapping to 80 columns.
+  MD013: false
+  # MD041 (first-line-heading): some files (e.g. sandbox/CLAUDE.md) begin with
+  #   an @import directive rather than a heading, which is intentional.
+  MD041: false
+globs:
+  - "**/*.md"
+ignores:
+  - ".git/**"
