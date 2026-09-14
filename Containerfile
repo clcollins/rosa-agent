@@ -1,4 +1,6 @@
 # syntax=docker/dockerfile:1
+# konflux-build-trigger-test: harmless no-op comment to exercise the PaC
+# pull-request build. Safe to remove.
 # ---------------------------------------------------------------------------
 # Stage 0: extract skills from NVIDIA OpenShell Community base image.
 # We build on UBI9, not the Ubuntu-based NVIDIA image, but we inherit
