@@ -6,6 +6,7 @@ ARG GH_VERSION=2.58.0
 ARG GOLANGCI_LINT_VERSION=2.7.2
 ARG STATICCHECK_VERSION=2025.1.1
 ARG SHELLCHECK_VERSION=0.10.0
+ARG GLAB_VERSION=1.118.0
 
 RUN set -eux; \
     dnf -y install --setopt=install_weak_deps=False --nodocs \
@@ -34,6 +35,13 @@ RUN set -eux; \
       "https://github.com/koalaman/ShellCheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.${SC_ARCH}.tar.xz"; \
     tar -C /tmp -xJf /tmp/shellcheck.tar.xz; \
     install -m0755 "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck; \
+    # --- glab (GitLab CLI) ---
+    # No UBI/EPEL rpm exists for glab; install the same way as the other
+    # GitHub-hosted tools above, from GitLab's own release tarballs.
+    curl -fsSLo /tmp/glab.tar.gz \
+      "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${ARCH}.tar.gz"; \
+    tar -C /tmp -xzf /tmp/glab.tar.gz; \
+    install -m0755 /tmp/bin/glab /usr/local/bin/glab; \
     # --- cleanup ---
     rm -rf /tmp/*
 
@@ -79,6 +87,7 @@ COPY --from=builder /usr/local/bin/gh /usr/local/bin/gh
 COPY --from=builder /usr/local/bin/golangci-lint /usr/local/bin/golangci-lint
 COPY --from=builder /usr/local/bin/staticcheck /usr/local/bin/staticcheck
 COPY --from=builder /usr/local/bin/shellcheck /usr/local/bin/shellcheck
+COPY --from=builder /usr/local/bin/glab /usr/local/bin/glab
 COPY --from=builder /usr/bin/claude /usr/local/bin/claude
 
 # --- Go tools via go install (pinned versions, matching boilerplate) ---
