@@ -34,7 +34,12 @@ network_policies:
         protocol: rest
         enforcement: enforce
     binaries:
-      - path: /usr/bin/gh
+      # gh installs to /usr/local/bin/gh (COPY --from=builder in the
+      # Containerfile), not /usr/bin/gh. Same failure mode already
+      # documented below for go_modules/go: the proxy allow-list matches
+      # per-binary-path, so the wrong path here silently defeated every
+      # rule in this block regardless of what the rules above allow.
+      - path: /usr/local/bin/gh
       - path: /usr/bin/git
       - path: /usr/bin/claude
   github_git:
