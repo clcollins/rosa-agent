@@ -88,7 +88,7 @@ COPY --from=builder /usr/local/bin/golangci-lint /usr/local/bin/golangci-lint
 COPY --from=builder /usr/local/bin/staticcheck /usr/local/bin/staticcheck
 COPY --from=builder /usr/local/bin/shellcheck /usr/local/bin/shellcheck
 COPY --from=builder /usr/local/bin/glab /usr/local/bin/glab
-COPY --from=builder /usr/bin/claude /usr/local/bin/claude
+COPY --from=builder /usr/bin/claude /usr/bin/claude
 
 # --- Go tools via go install (pinned versions, matching boilerplate) ---
 RUN set -eux; \
