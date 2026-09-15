@@ -1,28 +1,3 @@
-# syntax=docker/dockerfile:1
-# ---------------------------------------------------------------------------
-# Stage 0: extract skills from NVIDIA OpenShell Community base image.
-# We build on UBI9, not the Ubuntu-based NVIDIA image, but we inherit
-# the base image's agent skills (github/SKILL.md, etc.) via COPY --from.
-FROM ghcr.io/nvidia/openshell-community/sandboxes/base:latest AS nvidia-skills
-# ---------------------------------------------------------------------------
-# Go operator development sandbox for OpenShell gateway on ROSA HCP.
-#
-# Mirrors the NVIDIA OpenShell-Community base sandbox user model
-# (supervisor + sandbox users, /etc/openshell/policy.yaml) while using
-# UBI9 as the base and go-toolset RPM for Go (same pattern as
-# openshift/boilerplate's builder image).
-#
-# One-shot (default): orchestrator passes a command via CMD; the
-# entrypoint execs into it and the sandbox exits on completion.
-# Shell mode: CMD defaults to bash; sandbox stays alive for interactive
-# exec and sub-agent work (container-make style).
-#
-# Build context is the repo root so policies/, provider-profiles/, and sandbox/
-# are reachable:
-#   podman build --tag rosa-agent:latest --file Containerfile .
-# (or simply `make sandbox-build`)
-# ---------------------------------------------------------------------------
-
 # ---- Stage 1: binary downloads with SHA256 verification ----
 FROM registry.access.redhat.com/ubi9/ubi:9.8-1789461287 AS builder
 
@@ -62,13 +37,6 @@ RUN set -eux; \
     # --- cleanup ---
     rm -rf /tmp/*
 
-# ---- Stage 2: final sandbox image ----
-FROM registry.access.redhat.com/ubi9/ubi:9.8-1789461287
-
-LABEL org.opencontainers.image.title="openshell-sandbox-go" \
-      org.opencontainers.image.description="Go operator development sandbox for OpenShell gateway" \
-      org.opencontainers.image.base.name="registry.access.redhat.com/ubi9/ubi:9.8"
-
 # --- Claude Code signed repo ---
 RUN set -eux; \
     dnf -y install --nodocs 'dnf-command(config-manager)'; \
@@ -81,12 +49,21 @@ RUN set -eux; \
       'gpgkey=https://downloads.claude.ai/keys/claude-code.asc' \
       > /etc/yum.repos.d/claude-code.repo
 
+RUN set -eux; \
+    dnf -y install --nodocs claude-code
+
+# ---- Stage 2: final sandbox image ----
+FROM registry.access.redhat.com/ubi9/ubi:9.8-1789348643
+
+LABEL org.opencontainers.image.title="openshell-sandbox-go" \
+      org.opencontainers.image.description="Go operator development sandbox for OpenShell gateway" \
+      org.opencontainers.image.base.name="registry.access.redhat.com/ubi9/ubi:9.8"
+
 # --- system packages + Go toolset + Claude Code ---
 RUN set -eux; \
     dnf -y install --setopt=install_weak_deps=False --nodocs \
         git openssh-clients ca-certificates \
         go-toolset \
-        claude-code \
         python3 \
         jq make gcc findutils which tar gzip diffutils \
         curl-minimal rsync procps-ng \
@@ -102,6 +79,7 @@ COPY --from=builder /usr/local/bin/gh /usr/local/bin/gh
 COPY --from=builder /usr/local/bin/golangci-lint /usr/local/bin/golangci-lint
 COPY --from=builder /usr/local/bin/staticcheck /usr/local/bin/staticcheck
 COPY --from=builder /usr/local/bin/shellcheck /usr/local/bin/shellcheck
+COPY --from=builder /usr/bin/claude /usr/local/bin/claude
 
 # --- Go tools via go install (pinned versions, matching boilerplate) ---
 RUN set -eux; \
@@ -144,7 +122,7 @@ RUN set -eux; \
 # /sandbox/.claude/skills/ for Claude Code discovery. The NVIDIA base image
 # ships the github skill teaching agents to use gh api REST-only (GraphQL
 # is blocked by the sandbox network policy).
-COPY --from=nvidia-skills /sandbox/.agents/skills/ /sandbox/.agents/skills/
+COPY --from="ghcr.io/nvidia/openshell-community/sandboxes/base:latest" /sandbox/.agents/skills/ /sandbox/.agents/skills/
 COPY sandbox/skills/ /sandbox/.agents/skills/
 RUN set -eux; \
     rm -rf /sandbox/.claude/skills; \
