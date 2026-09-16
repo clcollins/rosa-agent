@@ -38,7 +38,7 @@ network_policies:
       # Containerfile), not /usr/bin/gh. Same failure mode already
       # documented below for go_modules/go: the proxy allow-list matches
       # per-binary-path, so the wrong path here silently defeated every
-      # rule in this block regardless of what the rules above allow.
+      # rule in this block.
       - path: /usr/local/bin/gh
       - path: /usr/bin/git
       - path: /usr/bin/claude

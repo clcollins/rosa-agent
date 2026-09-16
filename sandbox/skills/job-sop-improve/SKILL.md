@@ -173,34 +173,42 @@ For a stale-but-not-obsolete SOP:
    `/sop-improve` is not present in the clone, stop and report it — do not
    substitute your own editing logic.
 
-3. **Push the feature branch to your fork and open a PR against upstream:**
+3. **Push the feature branch to your fork, then open and label the PR using
+   the `github-labels` skill's deterministic script.** Do NOT use
+   `gh pr create --label` or `gh pr edit --add-label` — both resolve the
+   label through an internal GraphQL lookup, which the sandbox's GraphQL
+   block denies regardless of REST permissions, so they fail every time
+   regardless of whether the label exists:
 
    ```shell
    git push origin "sop-improve/<short-sop-slug>"
-   gh pr create --repo "$UPSTREAM" \
-     --base "$DEFAULT_BRANCH" \
-     --head "<your-account>:sop-improve/<short-sop-slug>" \
-     --label "ROSA-Agent" \
-     --title "Improve SOP: <path/to/sop.md>" \
-     --body "Automated improvement of a stale SOP (last updated <date>),
+
+   PR_NUMBER="$(FORK_OWNER="<your-account>" \
+     UPSTREAM="$UPSTREAM" \
+     BRANCH="sop-improve/<short-sop-slug>" \
+     TITLE="Improve SOP: <path/to/sop.md>" \
+     BODY="Automated improvement of a stale SOP (last updated <date>),
    selected at random by the SOP grooming job and improved via this repo's
    /sop-improve skill.
 
-   🤖 Opened by the automated job-sop-improve run."
+   🤖 Opened by the automated job-sop-improve run." \
+     bash /sandbox/.claude/skills/github-labels/open-labeled-pr.sh)"
    ```
 
-   The PR MUST carry the `ROSA-Agent` label so automated work is
-   distinguishable from human contributions. If `--label "ROSA-Agent"` fails
-   because the label does not yet exist on upstream, add it after the PR is
-   created:
+   This discovers `$UPSTREAM`'s default branch, opens the PR, creates the
+   `ROSA-Agent` label on `$UPSTREAM` if it doesn't exist yet, and attaches
+   it — all via REST. The PR MUST carry the `ROSA-Agent` label so automated
+   work is distinguishable from human contributions.
 
-   ```shell
-   gh pr edit <pr-number> --repo "$UPSTREAM" --add-label "ROSA-Agent"
-   ```
-
-   If the label still cannot be applied (e.g. it does not exist and cannot be
-   created under the injected token's permissions), report that and leave the PR
-   open — do not drop the label requirement silently.
+   `open-labeled-pr.sh` needs the injected account to have at least
+   **triage** access on `$UPSTREAM` for label creation/attachment to
+   succeed — if that's missing, it fails with a GitHub `403` and files its
+   own failure Issue against `openshift-online/rosa-agent` (see that
+   skill's *On failure* section); do not treat that as a proxy problem to
+   debug, ask for triage access on `$UPSTREAM` instead. On any failure from
+   this step, `open-labeled-pr.sh` has already filed the failure Issue
+   itself — do not also file a second one from the *On any failure* section
+   below for this specific step.
 
 ## On any failure or error: open an Issue against this job's repo
 
@@ -208,16 +216,18 @@ This is a scheduled, non-interactive job — there is no human watching it run, 
 failures must be surfaced somewhere durable. If **any** step fails or errors in
 a way that stops the job — the fork fast-forward fails / diverges, a required
 `gh`/`git` command errors, `/sop-improve` is missing or fails, a request is
-policy-denied (HTTP 403), the `ROSA-Agent` label cannot be applied, or anything
-else prevents a clean completion — open a GitHub **Issue against this job's own
-repository, `openshift-online/rosa-agent`**, describing what happened:
+policy-denied (HTTP 403), or anything else prevents a clean completion —
+open a GitHub **Issue against this job's own repository,
+`openshift-online/rosa-agent`**, describing what happened. (The exception is
+the PR-open-and-label step: `open-labeled-pr.sh` already files its own
+failure Issue for that step — see above — so don't duplicate it here.)
 
 ```shell
 gh issue create --repo "openshift-online/rosa-agent" \
   --title "job-sop-improve failure: <one-line summary>" \
   --body "The automated SOP grooming job failed.
 
-- Stage: <sync | selection | decision-gate | sop-improve | pr | label | ...>
+- Stage: <sync | selection | decision-gate | sop-improve | pr | ...>
 - Selected SOP (if any): <path/to/sop.md>
 - Command that failed: <command>
 - Error output (exact): <verbatim error, including any HTTP status / policy code>
