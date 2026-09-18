@@ -205,6 +205,23 @@ network_policies:
     binaries:
       - path: /usr/bin/claude
       - path: /usr/bin/curl
+  # Public container registry (quay.io) — read-only. Used to query the Quay
+  # API for image manifest/vulnerability data (curl) and to inspect image
+  # manifests, tags, and labels without pulling full images (skopeo). Scoped
+  # to GET-only registry/API traffic; no push/write capability is granted.
+  # See ROSAENG-67395.
+  quay_registry:
+    name: quay-registry
+    endpoints:
+      - host: quay.io
+        port: 443
+        access: read-only
+        protocol: rest
+        enforcement: enforce
+    binaries:
+      - path: /usr/bin/curl
+      - path: /usr/bin/skopeo
+      - path: /usr/bin/claude
   # Go module proxy, checksum verification, and package documentation
   go_modules:
     name: go-modules

@@ -75,7 +75,7 @@ RUN set -eux; \
         python3 \
         jq make gcc findutils which tar gzip diffutils \
         curl-minimal rsync procps-ng \
-        npm; \
+        npm skopeo; \
     dnf clean all; rm -rf /var/cache/dnf
 
 # --- markdownlint (for documentation review by sub-agents) ---

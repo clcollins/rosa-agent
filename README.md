@@ -65,7 +65,7 @@ It defines two things:
     blocks `/etc/profile` redirections. Baseline paths (`/usr`, `/lib`, `/etc`, `/proc`, `/tmp`,
     `/dev/urandom`) are added automatically by the supervisor.
 * **`network_policies`** — per-service egress allow-lists, each scoped to specific binaries
-    (`/usr/bin/claude`, `git`, `gh`, `glab`, `go`, `curl`) with `enforce` enforcement:
+    (`/usr/bin/claude`, `git`, `gh`, `glab`, `go`, `curl`, `skopeo`) with `enforce` enforcement:
   * **Model inference** — Bedrock (`bedrock-runtime.us-east-2`, SigV4-signed), Anthropic API
       (`api.anthropic.com`, for Claude Code WebFetch/WebSearch), and Google Vertex AI
       (`oauth2.googleapis.com`, `aiplatform.googleapis.com`).
@@ -73,6 +73,9 @@ It defines two things:
       `codeload.github.com`, `objects.githubusercontent.com`, and GitHub Actions hosts (CI status).
   * **GitLab** — read-write to `gitlab.cee.redhat.com` (git + `glab`).
   * **Go tooling** — read-only to `proxy.golang.org`, `sum.golang.org`, and `pkg.go.dev`.
+  * **Container registry** — read-only to `quay.io` (Quay API for image manifest/vulnerability
+      data via `curl`, and the registry v2 API for manifest/tag/label inspection via `skopeo`;
+      no image pulls or pushes).
   * **Reference / CI** — read-only to Red Hat docs, Konflux, Codecov, and Prow.
 
 Note: Jira egress is intentionally **not** in this baked policy. The `atlassian-jira` provider
