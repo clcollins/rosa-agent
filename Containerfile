@@ -2,9 +2,9 @@
 FROM registry.access.redhat.com/ubi9/ubi:9.8-1789646010 AS builder
 
 ARG TARGETARCH
-ARG GH_VERSION=2.58.0
-ARG GOLANGCI_LINT_VERSION=2.7.2
-ARG STATICCHECK_VERSION=2025.1.1
+ARG GH_VERSION=2.101.0
+ARG GOLANGCI_LINT_VERSION=2.13.2
+ARG STATICCHECK_VERSION=2026.2.1
 ARG SHELLCHECK_VERSION=0.10.0
 ARG GLAB_VERSION=1.118.0
 
@@ -94,7 +94,7 @@ COPY --from=builder /usr/bin/claude /usr/bin/claude
 RUN set -eux; \
     export GOPATH=/go; \
     export GOFLAGS=-mod=mod; \
-    go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.16.4; \
+    go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.22.0; \
     go install k8s.io/code-generator/cmd/openapi-gen@v0.29.15; \
     go install go.uber.org/mock/mockgen@v0.4.0; \
     go install golang.org/x/vuln/cmd/govulncheck@v1.1.4; \
