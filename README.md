@@ -258,8 +258,8 @@ hack/refresh_openshell_token.py -g "$GW_NAME" --if-expiring 90
 # openshell command after `--exec --`:
 export OPENSHELL_OIDC_CLIENT_SECRET=...   # or let the script read Vault
 hack/refresh_openshell_token.py -g "ROSA Agentic Devx" \
-  --exec -- sandbox create --name sop-cop \
-    --from quay.io/chcollin/scratch:openshell-sandbox-1788567061 \
+  --exec -- sandbox create --name "${USER}-$(date +%s)" \
+    --from quay.io/redhat-services-prod/rosa-tenant/rosa-agent/rosa-agent:latest \
     --provider rosa-general-vertex \
     --env=ANTHROPIC_BASE_URL=https://inference.local \
     --env=ANTHROPIC_API_KEY=unused \
