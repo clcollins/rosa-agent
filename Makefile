@@ -56,8 +56,8 @@ sandbox-push: require-sandbox-image sandbox-build
 # one-shot sandbox that runs the matching skill and exits (--no-keep --no-tty).
 # ---------------------------------------------------------------------------
 
-GW_NAME ?= ROSA Agentic Devx
-SOP_IMPROVE_IMAGE ?= quay.io/redhat-user-workloads/rosa-tenant/rosa-agent:latest
+GW_NAME ?= ROSA Agentic Devx-rosa-agent
+SOP_IMPROVE_IMAGE ?= quay.io/redhat-services-prod/rosa-tenant/rosa-agent/rosa-agent:latest
 
 .PHONY: sop-improve
 
@@ -75,7 +75,7 @@ sop-improve:
 	    --env JIRA_EMAIL="sd-sre-platform+rosa-agent@redhat.com" \
 	    --env=JIRA_BASE_URL="https://redhat.atlassian.net" \
 	    --no-keep --no-tty \
-	    -- claude --print "/job-sop-improve"
+	    -- claude --dangerously-skip-permissions --print "/job-sop-improve"
 
 # NOTE: there is no `sdlc-maturity` skill in this repo yet, so there is
 # intentionally no `sdlc-maturity` target here even though the `sdlc-maturity`

@@ -3,12 +3,14 @@
 
 Mints a fresh access token via the OIDC client_credentials grant and writes it
 into the gateway's oidc_token.json atomically, merging into any existing fields
-so nothing the OpenShell CLI stored gets dropped.
+so nothing the OpenShell CLI stored gets dropped.  After a successful mint,
+runs ``openshell whoami`` to verify the token is accepted by the gateway.
 
 The service-account client secret is long-lived; the access token is not. There
 is no refresh_token with client_credentials, so "refresh" == re-mint. Run this
-whenever the token is near expiry, on demand, or via --exec to wrap a command
-with automatic re-mint on auth failure.
+whenever the token is near expiry, on demand, or via --exec to mint a token and
+then exec into openshell (replacing this process entirely so openshell gets the
+real TTY, signals, and stdio).
 
 Config resolves in priority order: CLI flags > environment > metadata.json.
 The client secret is read from OPENSHELL_OIDC_CLIENT_SECRET; ONLY if that env
@@ -18,13 +20,13 @@ missing or rejected, it runs 'vault login -method=oidc' (opening a browser, or
 printing the auth URL with --no-browser) and retries.
 
 Examples:
-    # Just refresh the token file:
+    # Just refresh the token file and verify with whoami:
     ./refresh_openshell_token.py -g 'ROSA Agentic Devx-rosa-agent'
 
     # Refresh only if fewer than 90s of life remain:
     ./refresh_openshell_token.py -g 'ROSA Agentic Devx-rosa-agent' --if-expiring 90
 
-    # Refresh (as needed) then run a command, re-minting once on auth failure:
+    # Refresh, verify, then exec into openshell:
     ./refresh_openshell_token.py -g 'ROSA Agentic Devx-rosa-agent' \
         --exec -- sandbox create --name demo
 """
@@ -35,6 +37,7 @@ import argparse
 import base64
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -48,22 +51,6 @@ from pathlib import Path
 DEFAULT_VAULT_MOUNT = "osd-sre"
 DEFAULT_VAULT_PATH = "rosa-agent"
 DEFAULT_VAULT_FIELD = "hypershell-oidc-client-secret"
-
-# Substrings that indicate the CLI failed because the token was rejected.
-# The upstream OpenShell gateway (NVIDIA/OpenShell) returns gRPC
-# Code::Unauthenticated with a message that always contains "invalid token"
-# (e.g. "invalid token: ExpiredSignature", ": missing kid",
-# ": unknown signing key"); the CLI surfaces Unauthenticated as
-# "whoami requires authentication: ...". A JWKS-refresh failure comes back as
-# Code::Internal "OIDC key refresh failed", which is deliberately NOT matched
-# here because re-minting the caller's token would not fix a server-side JWKS
-# problem.
-AUTH_FAILURE_MARKERS = (
-    "invalid token",
-    "requires authentication",
-    "unauthenticated",
-    "expiredsignature",
-)
 
 
 def log(msg: str) -> None:
@@ -335,37 +322,37 @@ def refresh(args: argparse.Namespace) -> None:
     log(f"refreshed {token_path}{suffix}")
 
 
-def run_openshell(gateway: str, command: list[str]) -> subprocess.CompletedProcess:
-    full = ["openshell", "-g", gateway, *command]
-    return subprocess.run(full, capture_output=True, text=True)
+def whoami(gateway: str) -> None:
+    """Run ``openshell whoami`` to verify the token is accepted."""
+    openshell_bin = shutil.which("openshell")
+    if openshell_bin is None:
+        raise SystemExit("error: 'openshell' not found on PATH")
+    result = subprocess.run(
+        [openshell_bin, "-g", gateway, "whoami"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            f"error: openshell whoami failed (exit {result.returncode}): "
+            f"{(result.stderr or result.stdout).strip()}"
+        )
+    log(result.stdout.strip())
 
 
-def looks_like_auth_failure(proc: subprocess.CompletedProcess) -> bool:
-    blob = (proc.stdout + proc.stderr).lower()
-    return any(marker in blob for marker in AUTH_FAILURE_MARKERS)
+def exec_openshell(args: argparse.Namespace) -> None:
+    """Mint a fresh token, verify with whoami, then replace this process.
 
-
-def exec_with_retry(args: argparse.Namespace) -> int:
-    # Ensure we have a token before the first attempt.
+    After refresh() and whoami() succeed, os.execv replaces this Python
+    process entirely — openshell gets the real TTY, real signals, and real
+    stdio with no wrapper in between.
+    """
     refresh(args)
+    whoami(args.gateway)
 
-    proc = run_openshell(args.gateway, args.command)
-    if proc.returncode == 0:
-        sys.stdout.write(proc.stdout)
-        sys.stderr.write(proc.stderr)
-        return 0
-
-    if looks_like_auth_failure(proc):
-        log("openshell reported an auth failure; re-minting token and retrying")
-        # Force a mint regardless of remaining lifetime.
-        forced = argparse.Namespace(**vars(args))
-        forced.if_expiring = None
-        refresh(forced)
-        proc = run_openshell(args.gateway, args.command)
-
-    sys.stdout.write(proc.stdout)
-    sys.stderr.write(proc.stderr)
-    return proc.returncode
+    argv = ["openshell", "-g", args.gateway, *args.command]
+    openshell_bin = shutil.which("openshell")
+    log(f"exec: {' '.join(argv)}")
+    os.execv(openshell_bin, argv)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -419,8 +406,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--exec",
         dest="do_exec",
         action="store_true",
-        help="After refreshing, run: openshell -g <gateway> <command...>, "
-        "re-minting once on auth failure. Command follows '--'.",
+        help="After refreshing, exec into openshell (replacing this process). "
+        "Openshell gets the real TTY, signals, and stdio. "
+        "Command follows '--'.",
     )
     p.add_argument(
         "command",
@@ -441,8 +429,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     if args.do_exec:
-        return exec_with_retry(args)
+        exec_openshell(args)  # does not return (os.execv)
     refresh(args)
+    whoami(args.gateway)
     return 0
 
 
