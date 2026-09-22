@@ -1,5 +1,5 @@
 # ---- Stage 1: binary downloads with SHA256 verification ----
-FROM registry.access.redhat.com/ubi9/ubi:9.8-1789646010 AS builder
+FROM registry.access.redhat.com/ubi9/ubi:9.8-1790067847 AS builder
 
 ARG TARGETARCH
 ARG GH_VERSION=2.101.0
@@ -70,7 +70,7 @@ RUN set -eux; \
     dnf -y install --nodocs claude-code
 
 # ---- Stage 2: final sandbox image ----
-FROM registry.access.redhat.com/ubi9/ubi:9.8-1789646010
+FROM registry.access.redhat.com/ubi9/ubi:9.8-1790067847
 
 LABEL org.opencontainers.image.title="openshell-sandbox-go" \
       org.opencontainers.image.description="Go operator development sandbox for OpenShell gateway" \
