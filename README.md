@@ -245,22 +245,35 @@ openshell -g "$GW_NAME" sandbox create --name demo
 The `client_credentials` access token in `oidc_token.json` is short-lived and
 there is no refresh token — it must be re-minted. The
 [`hack/refresh_openshell_token.py`](hack/refresh_openshell_token.py) helper
-re-mints the token in place from the OIDC client secret (read from
-`OPENSHELL_OIDC_CLIENT_SECRET`, falling back to Vault) so you don't hit the
-`ssh exited with status 255` auth failure above:
+re-mints the token in place from the OIDC client secret, verifies with
+`openshell whoami`, and optionally execs into an openshell command.
+
+The script reads the client secret from the `OPENSHELL_OIDC_CLIENT_SECRET`
+environment variable. If that variable is not set, it falls back to reading
+from Vault automatically (prompting for OIDC browser login if your Vault
+token is expired):
 
 ```bash
-# Re-mint the gateway's token file:
+# Vault path: osd-sre/rosa-agent, field: hypershell-oidc-client-secret
+# To set the secret explicitly (e.g. in CI or to skip the Vault fallback):
+export OPENSHELL_OIDC_CLIENT_SECRET=$(vault kv get -mount=osd-sre -field=hypershell-oidc-client-secret rosa-agent)
+
+# Or just let the script read Vault for you — it will prompt for OIDC
+# browser login if your Vault token (~/.vault-token) is expired:
+hack/refresh_openshell_token.py -g "$GW_NAME"
+```
+
+```bash
+# Re-mint the gateway's token file and verify with whoami:
 hack/refresh_openshell_token.py -g "$GW_NAME"
 
 # Only re-mint if fewer than 90s of life remain:
 hack/refresh_openshell_token.py -g "$GW_NAME" --if-expiring 90
 
-# Refresh the token, then run — this is the reliable pattern. The script
-# re-mints as needed and retries once on auth failure, then execs the
-# openshell command after `--exec --`:
-export OPENSHELL_OIDC_CLIENT_SECRET=...   # or let the script read Vault
-hack/refresh_openshell_token.py -g "ROSA Agentic Devx" \
+# Refresh the token, verify with whoami, then exec into openshell.
+# The script replaces itself with the openshell process (os.execv),
+# so openshell gets the real TTY and signals:
+hack/refresh_openshell_token.py -g "ROSA Agentic Devx-rosa-agent" \
   --exec -- sandbox create --name "${USER}-$(date +%s)" \
     --from quay.io/redhat-services-prod/rosa-tenant/rosa-agent/rosa-agent:latest \
     --provider rosa-general-vertex \
@@ -270,7 +283,7 @@ hack/refresh_openshell_token.py -g "ROSA Agentic Devx" \
     --env JIRA_EMAIL="sd-sre-platform+rosa-agent@redhat.com" \
     --env=JIRA_BASE_URL="https://redhat.atlassian.net" \
     --no-keep --no-tty \
-    -- claude --print "Ping"
+    -- claude --dangerously-skip-permissions --print "Ping"
 ```
 
 It reads config (issuer, client id) from the gateway's `metadata.json`, so no
