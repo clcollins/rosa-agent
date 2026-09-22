@@ -49,36 +49,19 @@ sandbox-push: require-sandbox-image sandbox-build
 
 # ---------------------------------------------------------------------------
 # Konflux scheduled jobs (see README's "Konflux configuration > Scheduled
-# jobs" section). Each CronJob's pod has the OpenShell CLI and the
-# `ROSA Agentic Devx` gateway registered, plus OPENSHELL_OIDC_CLIENT_SECRET
-# injected from Vault; the target below refreshes that gateway's token via
-# hack/refresh_openshell_token.py and then, in the same command, creates a
-# one-shot sandbox that runs the matching skill and exits (--no-keep --no-tty).
+# jobs" section). Each CronJob's pod runs `make <job>` with
+# OPENSHELL_OIDC_CLIENT_SECRET injected from Vault as an environment
+# variable. Each job's Make logic — OpenShell gateway registration, OIDC
+# token minting, and the one-shot sandbox create (--no-keep --no-tty) that
+# runs the matching skill — lives in sandbox/skills/<job>.mk, next to that
+# job's skill, and is pulled in below via `include` to keep it logically
+# separate from the generic build/lint targets above.
 # ---------------------------------------------------------------------------
 
-GW_NAME ?= ROSA Agentic Devx-rosa-agent
-SOP_IMPROVE_IMAGE ?= quay.io/redhat-services-prod/rosa-tenant/rosa-agent/rosa-agent:latest
-
-.PHONY: sop-improve
-
-# Runs the `job-sop-improve` skill (sandbox/skills/job-sop-improve/SKILL.md):
-# grooms one stale SOP in openshift/ops-sop per invocation. Scheduled nightly
-# by the `sop-improve` Konflux CronJob.
-sop-improve:
-	hack/refresh_openshell_token.py -g "$(GW_NAME)" \
-	  --exec -- sandbox create --name sop-improve \
-	    --from $(SOP_IMPROVE_IMAGE) \
-	    --provider rosa-general-vertex \
-	    --env=ANTHROPIC_BASE_URL=https://inference.local \
-	    --env=ANTHROPIC_API_KEY=unused \
-	    --provider rosa-agent-github --provider rosa-agent-jira \
-	    --env JIRA_EMAIL="sd-sre-platform+rosa-agent@redhat.com" \
-	    --env=JIRA_BASE_URL="https://redhat.atlassian.net" \
-	    --no-keep --no-tty \
-	    -- claude --dangerously-skip-permissions --print "/job-sop-improve"
+include sandbox/skills/job-sop-improve.mk
 
 # NOTE: there is no `sdlc-maturity` skill in this repo yet, so there is
 # intentionally no `sdlc-maturity` target here even though the `sdlc-maturity`
-# Konflux CronJob documented in the README calls `make sdlc-maturity`. Add one,
-# following the `sop-improve` pattern above, once that skill exists under
-# sandbox/skills/. See openshift-online/rosa-agent#1.
+# Konflux CronJob documented in the README calls `make sdlc-maturity`. Add
+# one, following the `sop-improve` pattern (sandbox/skills/job-sop-improve.mk),
+# once that skill exists under sandbox/skills/. See openshift-online/rosa-agent#1.
