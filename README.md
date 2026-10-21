@@ -450,13 +450,17 @@ handled by the provider — it must be passed as a plain `ENV` variable when the
 Hypershell Provider config (using the custom profile from `provider-profiles/google-vertex-ai.yaml`):
 
 ```bash
-# 1. Import the profile (one-time per gateway; overrides the stock built-in)
+# 1. Import the profile (one-time per new gateway; lint first to catch format issues)
+openshell provider profile lint -f provider-profiles/google-vertex-ai.yaml
 openshell provider profile import -f provider-profiles/google-vertex-ai.yaml
+# To update an existing gateway's profile: export the current version, edit,
+# then `openshell provider profile update` (requires the fresh resource_version
+# from that export, at the profile's actual scope).
 
 # 2. Create the provider (project and region are required config keys)
 openshell provider create --name vertex-a \
   --type google-vertex-ai \
-  --credential GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN \
+  --credential GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN=placeholder \
   --config VERTEX_AI_PROJECT_ID=rosa-general \
   --config VERTEX_AI_REGION=global
 
