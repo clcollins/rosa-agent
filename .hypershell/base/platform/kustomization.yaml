@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Shared platform kinds. Today this is the Gateway alone; the SandboxTemplate
+# and ProviderSpecs land here too when the agent runtimes are taken on
+# (MCS-223). What belongs in this directory is exactly the set of importable
+# Kinds with no outbound foreign keys -- those are the ones that can be
+# authored and applied correctly today, because the import writer passes
+# foreign-key fields through verbatim and resolves nothing by name.
+#
+# No Repository manifest lives here. The importer skips that Kind to prevent
+# recursive registration; registration is a separate manual act and its
+# manifests live in hack/hypershell/.
+resources:
+  - gateway.yaml

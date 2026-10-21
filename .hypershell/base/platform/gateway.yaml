@@ -1,0 +1,36 @@
+# The gateway rosa-agent's scheduled work connects to.
+#
+# Placement, not pinning. The gateway declares the *kind* of cluster it wants
+# as capability-label selectors rather than a cluster_id; the api-server
+# resolves them to a concrete ManagedCluster and assigns cluster_id itself.
+# If nothing matches yet the gateway is created in a Pending/awaiting-placement
+# state and binds when a matching cluster appears -- a wrong selector is
+# recoverable, a wrong cluster_id is not.
+#
+# Placement is mapped at CREATE only and is NOT exposed on the Gateway read
+# surface, so a later import can never change it. Getting this wrong means
+# deleting the gateway and recreating it.
+#
+# This file carries the prod identity (rosa-agent). The integration and
+# staging overlays patch metadata.name; prod uses it as-is. Never apply this
+# base directly -- always apply an overlay.
+#
+# No metadata.description. `hsctl apply` copies metadata.description into the
+# request body verbatim, and GatewayCreateRequest has no such field, so the
+# API rejects the whole apply with
+#   400 ... Invalid request format: json: unknown field "description"
+# The import writer ignores the field instead, so this is one of the few
+# places the two apply paths genuinely differ. Of every create request in the
+# API only the gateway service account accepts a description. Describe the
+# gateway in a comment here, not in metadata.
+apiVersion: hypershell.redhat.io/v1
+kind: Gateway
+metadata:
+  name: rosa-agent
+spec:
+  placement:
+    selector:
+      - provider/ibm
+      - network/public
+  # Edge termination. The gateway is never declared insecure here.
+  tls_mode: edge

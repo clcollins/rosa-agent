@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Integration -- hyp0.
+#
+# The three HyperShell instances are separate databases, so identical gateway
+# names across them would be legal. They are named distinctly anyway: it keeps
+# fleet-wide logs and dashboards unambiguous, and it makes an apply against the
+# wrong context fail visibly instead of quietly succeeding.
+#
+# The rename is an explicit patch rather than kustomize's nameSuffix because
+# Gateway is not a built-in Kind: kustomize has no nameReference configuration
+# for it, so nameSuffix would rename the Gateway without rewriting any
+# gateway_id that references it. When the agent runtimes arrive they add their
+# own gateway_id patch here.
+resources:
+  - ../../base/platform
+
+patches:
+  - target:
+      kind: Gateway
+      name: rosa-agent
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: rosa-agent-integration

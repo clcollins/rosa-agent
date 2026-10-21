@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# VALIDATION ROOT ONLY -- do not apply this, and do not point a Repository's
+# import_path at it.
+#
+# It renders the base unmodified, which means it produces the *prod* gateway
+# identity (rosa-agent). Applying it against hyp0 or hyp1 would create a
+# prod-named gateway on the wrong instance. Every real apply and every
+# Repository import_path targets an overlay under overlays/.
+#
+# It exists so `kustomize build .hypershell/` is known-good, and
+# hack/hypershell/validate.py asserts the name it renders so this stays true.
+resources:
+  - base/platform

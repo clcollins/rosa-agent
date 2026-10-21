@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Staging -- hyp1.
+#
+# See overlays/integration/kustomization.yaml for why the rename is an
+# explicit patch rather than nameSuffix.
+resources:
+  - ../../base/platform
+
+patches:
+  - target:
+      kind: Gateway
+      name: rosa-agent
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: rosa-agent-staging
