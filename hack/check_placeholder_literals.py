@@ -3,19 +3,19 @@
 
 The OpenShell supervisor's request-body marker guard denies model requests
 whose body contains ``openshell:resolve:env:`` or ``OPENSHELL-RESOLVE-ENV-``.
-Claude Code loads skills, AGENTS.md, and provider profiles into the request
-body, so these literals must never appear in any tracked file — not just the
-subset that ships into the container image.
+Claude Code loads skills and AGENTS.md into the request body, and an agent
+working on this repo may read any tracked file into context, so these
+literals must never appear in any tracked file — not just the subset that
+ships into the container image.
 
 The match is intentionally case-insensitive: the supervisor guard is
 case-sensitive, but catching mixed-case variants prevents documentation
 that might later be copied verbatim into a guarded context.
 
 The root ``Containerfile`` is allowlisted because its build-time ``sed``
-legitimately references the pattern it is neutralising.  Files under
-``hack/`` are allowlisted because the checker and its tests must
-reference the patterns they scan for.  The allowlist matches by exact
-repo-relative path or path prefix.
+legitimately references the pattern it is neutralising.  This script and
+its test file are allowlisted because they must reference the patterns
+they scan for.  The allowlist matches exact repo-relative paths.
 
 Exit codes:
     0  no violations found
@@ -29,8 +29,11 @@ import sys
 
 PATTERN = re.compile(r"openshell:resolve:env:|OPENSHELL-RESOLVE-ENV-", re.IGNORECASE)
 
-ALLOWLISTED_PATHS = frozenset({"Containerfile"})
-ALLOWLISTED_PREFIXES = ("hack/",)
+ALLOWLISTED_PATHS = frozenset({
+    "Containerfile",
+    "hack/check_placeholder_literals.py",
+    "hack/tests/test_check_placeholder_literals.py",
+})
 
 
 def find_violations(entries):
@@ -38,12 +41,11 @@ def find_violations(entries):
 
     *entries* is an iterable of ``(path, text)`` pairs where *path* is the
     repo-relative file path and *text* is its full content as a string.
-    Paths are matched exactly against ``ALLOWLISTED_PATHS`` or by prefix
-    against ``ALLOWLISTED_PREFIXES``.
+    Paths are matched exactly against ``ALLOWLISTED_PATHS``.
     """
     findings = []
     for path, text in entries:
-        if path in ALLOWLISTED_PATHS or path.startswith(ALLOWLISTED_PREFIXES):
+        if path in ALLOWLISTED_PATHS:
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
             if PATTERN.search(line):

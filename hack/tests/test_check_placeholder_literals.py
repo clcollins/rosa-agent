@@ -45,10 +45,20 @@ class TestFindViolations(unittest.TestCase):
         results = find_violations(entries)
         self.assertEqual(len(results), 1)
 
-    def test_allowlists_hack_directory(self):
+    def test_allowlists_checker_script(self):
         entries = [("hack/check_placeholder_literals.py", "openshell:resolve:env:X")]
         results = find_violations(entries)
         self.assertEqual(len(results), 0)
+
+    def test_allowlists_checker_tests(self):
+        entries = [("hack/tests/test_check_placeholder_literals.py", "openshell:resolve:env:X")]
+        results = find_violations(entries)
+        self.assertEqual(len(results), 0)
+
+    def test_rejects_other_hack_files(self):
+        entries = [("hack/other_script.py", "openshell:resolve:env:X")]
+        results = find_violations(entries)
+        self.assertEqual(len(results), 1)
 
     def test_clean_file_passes(self):
         entries = [("clean.md", "credential placeholder (openshell resolve-env)")]

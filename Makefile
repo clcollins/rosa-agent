@@ -23,9 +23,9 @@ lint: markdown-lint check-placeholders
 markdown-lint:
 	markdownlint-cli2 "**/*.md"
 
-# Fail if any tracked file (except Containerfile) contains raw
-# credential-placeholder literals that trip the supervisor's
-# request-body marker guard.
+# Fail if any tracked file contains raw credential-placeholder literals
+# that trip the supervisor's request-body marker guard.  Containerfile
+# and the checker itself are allowlisted.
 check-placeholders:
 	python3 hack/check_placeholder_literals.py
 
