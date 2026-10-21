@@ -13,7 +13,7 @@ mints and refreshes `PAGERDUTY_ACCESS_TOKEN` for you.
 
 | Variable | Meaning |
 | --- | --- |
-| `PAGERDUTY_ACCESS_TOKEN` | Scoped OAuth access token. Its value looks like an opaque `openshell:resolve:env:*` placeholder — this is expected. Use it exactly as if it were a real Bearer token; the sandbox proxy substitutes the real value at egress, and the gateway refreshes it before it expires. Never try to decode, print, or work around it. |
+| `PAGERDUTY_ACCESS_TOKEN` | Scoped OAuth access token. Its value looks like an opaque credential placeholder (openshell resolve-env) — this is expected. Use it exactly as if it were a real Bearer token; the sandbox proxy substitutes the real value at egress, and the gateway refreshes it before it expires. Never try to decode, print, or work around it. |
 | `PAGERDUTY_FROM_EMAIL` | A real PagerDuty user's email, required on note-creation requests only. May be unset if the caller only needs reads. |
 
 ## Required headers on every call

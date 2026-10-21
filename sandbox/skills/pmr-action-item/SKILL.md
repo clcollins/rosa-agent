@@ -105,7 +105,7 @@ Before opening any PR, vet the diff two ways:
 1. **Fan out parallel subagents** (the Agent/Task tool) over the diff, each
    with a distinct, narrow focus:
    - secrets or credential leakage (anything that could expose a token,
-     password, or the `openshell:resolve:env:*` placeholders themselves);
+     password, or the credential placeholders (openshell resolve-env) themselves);
    - injection or unsafe shell/eval/deserialization;
    - authorization or permission widening (e.g. a new endpoint, RBAC rule,
      or policy change that grants more than the ticket called for);

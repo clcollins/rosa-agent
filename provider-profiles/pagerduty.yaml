@@ -33,7 +33,7 @@
 # `Authorization: Token token=<api-key>` for classic API keys, and
 # SecretResolver::rewrite_header_value (openshell-core) splits header values
 # on the FIRST whitespace only — for "Token token=$PAGERDUTY_API_TOKEN" that
-# produces prefix "Token" and candidate "token=openshell:resolve:env:...",
+# produces prefix "Token" and candidate "token=<credential placeholder (openshell resolve-env)>",
 # which is not a resolvable placeholder shape (the literal "token=" defeats
 # both the plain-placeholder and the alias-prefix path, since alias prefixes
 # may only contain [A-Za-z0-9_.~-]). The request is rejected before it ever
@@ -82,7 +82,7 @@
 #       -- claude
 #
 # Inside the sandbox the agent sees PAGERDUTY_ACCESS_TOKEN set to an opaque
-# openshell:resolve:env:* placeholder, gateway-refreshed and never plaintext:
+# credential placeholder (openshell resolve-env), gateway-refreshed and never plaintext:
 #
 #   curl -H "Authorization: Bearer $PAGERDUTY_ACCESS_TOKEN" \
 #        -H "Accept: application/vnd.pagerduty+json;version=2" \
