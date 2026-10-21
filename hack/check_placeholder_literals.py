@@ -3,11 +3,19 @@
 
 The OpenShell supervisor's request-body marker guard denies model requests
 whose body contains ``openshell:resolve:env:`` or ``OPENSHELL-RESOLVE-ENV-``.
-Claude Code loads skills and AGENTS.md into the request body, so these
-literals must never appear in shipped content.
+Claude Code loads skills, AGENTS.md, and provider profiles into the request
+body, so these literals must never appear in any tracked file — not just the
+subset that ships into the container image.
 
-Containerfile is allowlisted because its build-time ``sed`` legitimately
-references the pattern it is neutralising.
+The match is intentionally case-insensitive: the supervisor guard is
+case-sensitive, but catching mixed-case variants prevents documentation
+that might later be copied verbatim into a guarded context.
+
+The root ``Containerfile`` is allowlisted because its build-time ``sed``
+legitimately references the pattern it is neutralising.  Files under
+``hack/`` are allowlisted because the checker and its tests must
+reference the patterns they scan for.  The allowlist matches by exact
+repo-relative path or path prefix.
 
 Exit codes:
     0  no violations found
@@ -22,6 +30,7 @@ import sys
 PATTERN = re.compile(r"openshell:resolve:env:|OPENSHELL-RESOLVE-ENV-", re.IGNORECASE)
 
 ALLOWLISTED_PATHS = frozenset({"Containerfile"})
+ALLOWLISTED_PREFIXES = ("hack/",)
 
 
 def find_violations(entries):
@@ -29,10 +38,12 @@ def find_violations(entries):
 
     *entries* is an iterable of ``(path, text)`` pairs where *path* is the
     repo-relative file path and *text* is its full content as a string.
+    Paths are matched exactly against ``ALLOWLISTED_PATHS`` or by prefix
+    against ``ALLOWLISTED_PREFIXES``.
     """
     findings = []
     for path, text in entries:
-        if os.path.basename(path) in ALLOWLISTED_PATHS:
+        if path in ALLOWLISTED_PATHS or path.startswith(ALLOWLISTED_PREFIXES):
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
             if PATTERN.search(line):
@@ -56,7 +67,7 @@ def _tracked_files(repo_root):
         try:
             with open(abspath, encoding="utf-8", errors="surrogateescape") as fh:
                 yield relpath, fh.read()
-        except (OSError, UnicodeDecodeError):
+        except OSError:
             continue
 
 

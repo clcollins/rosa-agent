@@ -11,10 +11,7 @@ SANDBOX_TAG ?= $(shell git rev-parse --short=7 HEAD)
 SANDBOX_CONTAINERFILE := Containerfile
 SANDBOX_CONTEXT := .
 
-HACK_VENV := hack/.venv
-HACK_PYTHON := $(HACK_VENV)/bin/python3
-
-.PHONY: lint markdown-lint check-placeholders test test-hack hack-venv sandbox-build sandbox-push require-sandbox-image
+.PHONY: lint markdown-lint check-placeholders test test-hack sandbox-build sandbox-push require-sandbox-image
 
 # Parent lint target: runs every linter. The OpenShift CI `ci/prow/lint`
 # presubmit runs `make lint`. Add new linters (shell, yaml, ...) as their own
@@ -29,8 +26,8 @@ markdown-lint:
 # Fail if any tracked file (except Containerfile) contains raw
 # credential-placeholder literals that trip the supervisor's
 # request-body marker guard.
-check-placeholders: hack-venv
-	$(HACK_PYTHON) hack/check_placeholder_literals.py
+check-placeholders:
+	python3 hack/check_placeholder_literals.py
 
 # Run every skill's Python unit tests, then any bundled shell-script tests.
 # Stdlib unittest only - this image has no pip, so no pytest/coverage
@@ -55,17 +52,9 @@ test:
 	$(MAKE) test-hack
 
 # Unit tests for Python scripts in hack/.
-test-hack: hack-venv
+test-hack:
 	@echo "=== hack/tests ==="; \
-	PYTHONPATH=hack $(HACK_PYTHON) -m unittest discover -s hack/tests
-
-# Create or update the hack/ venv. Rebuilds only when requirements.txt changes.
-hack-venv: $(HACK_VENV)/pyvenv.cfg
-
-$(HACK_VENV)/pyvenv.cfg: hack/requirements.txt
-	python3 -m venv $(HACK_VENV)
-	$(HACK_PYTHON) -m pip install --quiet --requirement hack/requirements.txt
-	@touch $@
+	PYTHONPATH=hack python3 -m unittest discover -s hack/tests
 
 # Local build tag when no image is given, so `make sandbox-build` works without
 # a registry. A push always requires SANDBOX_IMAGE (see require-sandbox-image).

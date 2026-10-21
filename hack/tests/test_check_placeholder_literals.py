@@ -40,8 +40,13 @@ class TestFindViolations(unittest.TestCase):
         results = find_violations(entries)
         self.assertEqual(len(results), 0)
 
-    def test_allowlists_containerfile_in_subdirectory(self):
+    def test_rejects_containerfile_in_subdirectory(self):
         entries = [("subdir/Containerfile", "sed openshell:resolve:env:X")]
+        results = find_violations(entries)
+        self.assertEqual(len(results), 1)
+
+    def test_allowlists_hack_directory(self):
+        entries = [("hack/check_placeholder_literals.py", "openshell:resolve:env:X")]
         results = find_violations(entries)
         self.assertEqual(len(results), 0)
 
