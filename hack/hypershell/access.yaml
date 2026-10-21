@@ -1,0 +1,70 @@
+# Who holds what on the rosa-agent gateways.
+#
+# This file records the access *policy*: which tiers exist, who should hold
+# them, and what the service accounts look like.
+#
+# It deliberately does NOT record real usernames. This repository is public,
+# and the grant API takes internal Red Hat directory usernames, which are not
+# the same as the GitHub handles in OWNERS. Publishing them here would put
+# internal identifiers into public git history for no operational benefit.
+#
+# The live roster is authoritative and is one command away:
+#
+#     hsctl list gatewayAccess --gateway-id "$GATEWAY_ID"
+#
+# Substitute the real usernames at the point of use. Do not commit them.
+#
+# Nothing reads this file automatically, and nothing here is reconciled.
+# It cannot live in .hypershell/: access grants are stored as RoleBindings,
+# which are not one of the seven importable Kinds, so the declarative import
+# renders them and drops them without an error. Service accounts are not a
+# Kind at all. Both are applied by hand -- see README.md.
+#
+# The same matrix applies to all three gateways (integration on hyp0,
+# staging on hyp1, prod on hyp2). Each instance has its own database, so the
+# grants below must be made once per instance.
+
+# Management-plane tier `owner`. Both `owner` and `admin` confer the
+# gateway-side role openshell-admin; they differ only in that an owner may
+# delete the gateway and grant the owner tier.
+#
+# Peers are owners rather than admins so no gateway is one person's bus
+# factor. A gateway must always retain at least one owner, so a sole owner
+# cannot later be removed or demoted -- naming the others up front avoids
+# that corner.
+#
+# The gateway creator is auto-provisioned as the first owner and so is not
+# listed here.
+owners:
+  - REPLACE_WITH_DIRECTORY_USERNAME  # peer
+  - REPLACE_WITH_DIRECTORY_USERNAME  # peer
+
+# Everyone else is granted the `user` tier, which confers openshell-user
+# (read-only) on the gateway itself.
+
+service_accounts:
+  # openshell-admin, NOT openshell-user, despite least privilege pointing the
+  # other way.
+  #
+  # A service account does not inherit its creator's OpenShell workspace
+  # memberships (OSG-SACC-13). An openshell-user subject can authenticate and
+  # call identity/status operations such as `whoami`, but every
+  # workspace-scoped operation -- including creating a sandbox, which is the
+  # entire job -- stays denied until a gateway administrator adds that subject
+  # to each workspace by hand. Version 1 excludes automatic workspace
+  # discovery and membership, and hsctl exposes no workspace commands at all,
+  # so there is no mechanism here to grant it.
+  #
+  # openshell-admin is explicitly permitted to bypass workspace membership.
+  # That makes it the only role that actually functions for scheduled work
+  # today. Revisit if workspace membership ever gets a real grant path.
+  #
+  # The role is fixed at creation, so changing it means revoking and
+  # recreating, which rotates the client secret.
+  - name: rosa-agent-bot
+    role: openshell-admin
+    # The server applies a 90-day expiry by default (policy: 1h minimum,
+    # 90d default, 365d maximum). There is no "never expires" option, so the
+    # only question is how often rotation is forced. 365d takes the maximum
+    # and makes the renewal an annual, diarised task rather than a surprise.
+    expires_in: 365d
