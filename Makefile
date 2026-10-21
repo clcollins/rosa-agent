@@ -29,16 +29,16 @@ markdown-lint:
 check-placeholders:
 	python3 hack/check_placeholder_literals.py
 
-# Guard against re-introduction of removed Bedrock/inference.local config
-# in sandbox templates and cron jobs. See MCS-324.
-SANDBOX_FORBIDDEN := inference\.local|ANTHROPIC_API_KEY|ANTHROPIC_BASE_URL|rosa-general-vertex
+# Guard against re-introduction of removed Bedrock/inference.local config.
+# Covers sandbox files, docs, provider profiles, and policies. See MCS-324.
+SANDBOX_FORBIDDEN := inference\.local|ANTHROPIC_API_KEY|ANTHROPIC_BASE_URL|rosa-general-vertex|vertex-a([^i]|$$)
+SANDBOX_LINT_PATHS := sandbox/templates/ sandbox/skills/**/*-cron.yaml README.md provider-profiles/ policies/ docs/
 lint-sandbox:
-	@if git grep --extended-regexp '$(SANDBOX_FORBIDDEN)' -- 'sandbox/templates/' 'sandbox/skills/**/*-cron.yaml' > /dev/null 2>&1; then \
-		echo "ERROR: forbidden Bedrock-era config found in sandbox files:"; \
-		git grep --extended-regexp --line-number '$(SANDBOX_FORBIDDEN)' -- 'sandbox/templates/' 'sandbox/skills/**/*-cron.yaml'; \
-		exit 1; \
-	fi
-	@echo "lint-sandbox: OK"
+	@git grep --extended-regexp --line-number '$(SANDBOX_FORBIDDEN)' -- $(SANDBOX_LINT_PATHS); \
+	rc=$$?; \
+	if [ $$rc -eq 0 ]; then echo "ERROR: forbidden Bedrock-era config found (MCS-324)"; exit 1; fi; \
+	if [ $$rc -ne 1 ]; then echo "ERROR: git grep failed (rc=$$rc)"; exit $$rc; fi; \
+	echo "lint-sandbox: OK"
 
 # Run every skill's Python unit tests, then any bundled shell-script tests.
 # Stdlib unittest only - this image has no pip, so no pytest/coverage
