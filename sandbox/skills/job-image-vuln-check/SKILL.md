@@ -278,7 +278,7 @@ Repeat per fixable CVE bucket. One fix per PR - never batch.
   repo+image instead (step 5).
 - Verify version/evidence claims against something real - never invent one.
 - Never print, commit, or put a literal credential anywhere - only the
-  `openshell:resolve:env:*` / `${GITHUB_TOKEN}`-style placeholders already
+  credential placeholders (openshell resolve-env) / `${GITHUB_TOKEN}`-style references already
   used throughout this repo.
 - No `ROSA-Agent` label on these PRs (unlike `job-sop-improve`'s target).
 

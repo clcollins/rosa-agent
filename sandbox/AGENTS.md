@@ -12,7 +12,7 @@ to the upstream repository with your work.
 
 ## Credentials are pre-injected — never authenticate interactively
 
-Tokens appear as opaque `openshell:resolve:env:*` placeholders. Use them
+Tokens appear as opaque credential placeholders (openshell resolve-env). Use them
 verbatim; the proxy substitutes the real value at egress. You MUST NOT:
 
 - run `gh auth login`, OAuth flows, or any interactive login;

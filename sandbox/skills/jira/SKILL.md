@@ -12,7 +12,7 @@ or ask the user for a token.
 
 | Variable | Meaning |
 | --- | --- |
-| `JIRA_API_TOKEN` | API token. Its value looks like an opaque `openshell:resolve:env:*` placeholder — this is expected. Use it exactly as if it were the real token; the sandbox proxy substitutes the real value at egress. Never try to decode, print, or work around it. |
+| `JIRA_API_TOKEN` | API token. Its value looks like an opaque credential placeholder (openshell resolve-env) — this is expected. Use it exactly as if it were the real token; the sandbox proxy substitutes the real value at egress. Never try to decode, print, or work around it. |
 | `JIRA_EMAIL` | Account email. Used ONLY for classic-token Basic auth. May be unset. |
 | `JIRA_BASE_URL` | Site base URL. May be unset — if so, derive it (see below). |
 

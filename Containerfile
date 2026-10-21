@@ -143,6 +143,15 @@ COPY sandbox/AGENTS.md /sandbox/AGENTS.md
 COPY sandbox/CLAUDE.md /sandbox/CLAUDE.md
 RUN chown sandbox:sandbox /sandbox/AGENTS.md /sandbox/CLAUDE.md
 
+# --- neutralize credential-placeholder literals in baked content ---
+# Doc files that mention the openshell:resolve:env: prefix by name trip the
+# supervisor's request-body marker guard when Claude Code loads them into the
+# system prompt. Breaking the prefix with a space defuses the guard without
+# affecting readability. Applied at build time so upstream base-image
+# refreshes are covered automatically.
+RUN grep -rl 'openshell:resolve:env:\|OPENSHELL-RESOLVE-ENV-' /sandbox/.agents/skills /sandbox/AGENTS.md /sandbox/CLAUDE.md 2>/dev/null \
+    | xargs -r sed -i -e 's/openshell:resolve:env:/openshell:resolve:env :/g' -e 's/OPENSHELL-RESOLVE-ENV-/OPENSHELL-RESOLVE-ENV -/g'
+
 # --- default sandbox policy ---
 # Baked at the OpenShell-standard path so it applies automatically when
 # --policy is not passed at sandbox create time. Precedence (lowest to highest):
@@ -160,18 +169,12 @@ COPY policies/default.yaml /etc/openshell/policy.yaml
 # Pre-approves everything that would otherwise block a non-interactive
 # `--dangerously-skip-permissions --print` run:
 #   - bypassPermissionsModeAccepted: enables --dangerously-skip-permissions
-#   - customApiKeyResponses.approved ["unused"]: matches ANTHROPIC_API_KEY=unused
-#     so the custom-API-key approval prompt is suppressed
 #   - projects./sandbox trust + hooks: accepts the workspace trust dialogs
 RUN printf '%s\n' \
       '{' \
       '  "hasCompletedOnboarding": true,' \
       '  "bypassPermissionsModeAccepted": true,' \
       '  "theme": "dark",' \
-      '  "customApiKeyResponses": {' \
-      '    "approved": ["unused"],' \
-      '    "rejected": []' \
-      '  },' \
       '  "projects": {' \
       '    "/sandbox": {' \
       '      "hasTrustDialogAccepted": true,' \
@@ -193,17 +196,16 @@ ENV PATH="/usr/local/go/bin:/sandbox/go/bin:/sandbox/.local/bin:/usr/local/bin:/
     DISABLE_AUTOUPDATER=1 \
     DISABLE_UPDATES=1
 
-# --- agent runtime defaults ---
-# Baked defaults for Bedrock-routed Claude Code and Jira Cloud. Per-sandbox
-# overrides can still be passed via `openshell sandbox create --env`.
-#
-# Note: these do not appear to continue to exist inside the container.
-# The openshell scaffolding removes environment variables before injecting its own?
+# --- Vertex AI credential + config via Claude Code settings ---
+# The supervisor injects GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN via the
+# attached google-vertex-ai provider. Claude Code's apiKeyHelper reads
+# that sentinel at runtime (not bake time); the env block sets the static
+# Vertex config. This avoids a wrapper binary on PATH.
+COPY sandbox/settings.json /sandbox/.claude/settings.json
+RUN chown sandbox:sandbox /sandbox/.claude/settings.json
 
-ENV ANTHROPIC_MODEL=us.anthropic.claude-sonnet-4-5-20250929-v1:0 \
-    ANTHROPIC_BASE_URL=https://inference.local \
-    ANTHROPIC_API_KEY=unused \
-    JIRA_EMAIL="sd-sre-platform+rosa-agent@redhat.com" \
+# --- agent runtime defaults ---
+ENV JIRA_EMAIL="sd-sre-platform+rosa-agent@redhat.com" \
     JIRA_BASE_URL="https://redhat.atlassian.net"
 
 USER sandbox

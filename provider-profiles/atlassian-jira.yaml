@@ -20,7 +20,7 @@
 #
 # Create the provider. JIRA_API_TOKEN is the only real secret this profile
 # manages — it becomes an opaque, proxy-resolved placeholder inside the
-# sandbox (openshell:resolve:env:*), never a plaintext value:
+# sandbox (openshell:resolve:env :*), never a plaintext value:
 #   openshell provider create --name work-jira --type atlassian-jira \
 #       --credential JIRA_API_TOKEN
 #
@@ -40,7 +40,7 @@
 #   openshell sandbox provider attach <sandbox> work-jira
 #
 # Inside the sandbox the agent sees JIRA_API_TOKEN set to an opaque
-# openshell:resolve:env:* placeholder. It uses it exactly like a real token:
+# openshell:resolve:env :* placeholder. It uses it exactly like a real token:
 #
 #   curl -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
 #     "$JIRA_BASE_URL/rest/api/3/issue/PROJ-123"

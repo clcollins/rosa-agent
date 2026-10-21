@@ -12,19 +12,6 @@ filesystem_policy:
     - /dev/null
 
 network_policies:
-  bedrock_inference_sigv4:
-    name: bedrock-inference-sigv4
-    endpoints:
-      - host: bedrock-runtime.us-east-2.amazonaws.com
-        port: 443
-        access: read-write
-        protocol: rest
-        enforcement: enforce
-        credential_signing: sigv4
-        signing_service: bedrock
-        signing_region: us-east-2
-    binaries:
-      - path: /usr/bin/claude
   github_api:
     name: github-api
     endpoints:
@@ -220,39 +207,10 @@ network_policies:
       - path: /usr/bin/git
       - path: /usr/local/bin/glab
       - path: /usr/bin/claude
-  # Google Vertex AI — Claude Code via Vertex backend
-  # Endpoints from built-in google-vertex-ai provider profile
-  vertex_ai:
-    name: vertex-ai
-    endpoints:
-      - host: oauth2.googleapis.com
-        port: 443
-        access: read-write
-        protocol: rest
-        enforcement: enforce
-      - host: aiplatform.googleapis.com
-        port: 443
-        access: read-write
-        protocol: rest
-        enforcement: enforce
-      - host: "*.aiplatform.googleapis.com"
-        port: 443
-        access: read-write
-        protocol: rest
-        enforcement: enforce
-      - host: aiplatform.us.rep.googleapis.com
-        port: 443
-        access: read-write
-        protocol: rest
-        enforcement: enforce
-      - host: aiplatform.eu.rep.googleapis.com
-        port: 443
-        access: read-write
-        protocol: rest
-        enforcement: enforce
-    binaries:
-      - path: /usr/bin/claude
-      - path: /usr/bin/curl
+  # Google Vertex AI endpoints are provided by the google-vertex-ai provider
+  # profile (attached via --provider vertex-a). Do not duplicate them here;
+  # overlapping endpoints with differing request_body_credential_rewrite
+  # values cause an ambiguity validation failure at sandbox creation.
   # Public container registry (quay.io) — read-only. Used to query the Quay
   # API for image manifest/vulnerability data (curl) and to inspect image
   # manifests, tags, and labels without pulling full images (skopeo). Scoped
