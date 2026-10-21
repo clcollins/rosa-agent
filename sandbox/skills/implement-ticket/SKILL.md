@@ -1,6 +1,6 @@
 ---
 name: implement-ticket
-description: Standing rules for implementing the code change a ticket describes, in any repository or language - TDD one commit per task, pure functions behind thin I/O shells, hermetic tests, typed errors, security defaults, then a mandatory fan-out of independent review subagents before a draft PR carrying cited acceptance-criteria evidence. Not for reviewing someone else's PR and not for open-ended research. Use when told to implement, build, or fix the change described in a Jira card, GitHub issue, or task, or when asked how implementation work is expected to be done here. Trigger keywords - implement ticket, implement the card, work this issue, build the change, write the code, TDD, test-driven, one commit per task, review fan-out, open a PR for the ticket, implementing agent, standing instructions.
+description: How implementation work is done here, in any repository or language - TDD with one commit per task, pure functions behind thin I/O shells, hermetic tests, typed errors, security defaults, a mandatory fan-out of independent review subagents, and a draft PR carrying cited acceptance-criteria evidence. Governs how code is written and reviewed, not which ticket to pick up or how a run is driven: when a job skill such as pmr-action-item owns the run, that skill's mechanics win. Not for reviewing someone else's PR and not for open-ended research. Use when about to write the code a ticket describes, or when asked what the implementation, testing, or pre-PR review rules are. Trigger keywords - implement the ticket, implement the card, implementation rules, TDD, test-driven, red-green-refactor, one commit per task, hermetic tests, review fan-out, implementing agent, standing instructions.
 ---
 
 # Implement a ticket: TDD, review fan-out, draft PR
@@ -18,6 +18,24 @@ Do not research: no web, no other repositories, no inference from memory to
 fill a gap. A guessed flag name, string, default or error type is a defect.
 A research need becomes a question on the ticket, not an assumption in the
 code.
+
+## Relationship to other skills
+
+This skill governs how code is written, tested and reviewed. It does not
+decide which ticket to pick up or how a run is driven. When a job skill owns
+the run - `pmr-action-item`, for example - that skill's mechanics win:
+branch naming, how and when the PR is opened, labels, the finding format its
+own review fan-out uses, whether the run is interactive, and where failures
+and blockers get reported. Follow its workflow, and apply sections 2 and 3
+here for the code itself.
+
+The structured-ticket assumption above holds only when the ticket actually
+has that structure. A free-form ticket is not automatically insufficient:
+derive the task list and acceptance criteria from what it does say, record
+what you derived in the PR body, and stop and ask only when the intended
+change is genuinely ambiguous. Likewise, "do not research" governs the
+behavior you implement - it does not stop you inferring which repository or
+file a ticket concerns.
 
 ## 1. Before you write code
 
@@ -37,12 +55,14 @@ code.
 
 Work the task list in order. Per task:
 
-1. Write the failing test(s) the task names: table-driven, named subtests,
-   `t.Helper()` (Go) or `subTest` (Python) in helpers, covering every input
-   class, every error path, and the acceptance criterion this task
-   satisfies.
+1. Write the failing test(s) the task names: table-driven, with named
+   subtests (`t.Run`, `subTest`) and `t.Helper()` in Go helpers, covering
+   every input class, every error path, and the acceptance criterion this
+   task satisfies.
 1. Run them. Each must fail because the behavior is missing, not from a typo
-   or a compile error. Keep the output.
+   or a compile error. Keep that output: because tests and implementation
+   land in the same commit, this red run is the only evidence the test came
+   first, and it goes in the PR body.
 1. Write the minimum code that makes them pass.
 1. Refactor green.
 1. Commit (section 4).
@@ -81,7 +101,7 @@ before coding further.
 - No network: `httptest.Server`, the repository's gRPC mock or bufconn, SSH
   in-process over in-memory connections.
 - No filesystem outside `t.TempDir()`, `fstest.MapFS`, or a temp directory.
-  Never the user's home, config dirs, or `/tmp`.
+  Never the user's home, config dirs, or `/tmp` directly.
 - No host environment: scrub the relevant variables in `TestMain`/`setUp`.
 - No external binaries, no `exec.Command` in tests.
 - No sleeps for synchronization: channels, fake clocks, injected tickers. No
@@ -155,11 +175,14 @@ reviewed commit; add a new one.
 
 Before creating the PR, launch the validators below in parallel as
 independent subagents (the Agent/Task tool, or your runtime's equivalent).
-Each gets exactly three things: the branch diff against the base, the ticket
-text verbatim, and this skill. They see neither each other's output nor your
-reasoning. If your runtime cannot spawn subagents, run each pass yourself,
-one at a time, against the diff and ticket alone - do not collapse them into
-one pass and do not drop any.
+Each gets the same four things and nothing else: the branch checked out at
+its head, so it can build and run the suite; `git log -p <base>..HEAD`, so
+it can judge commit order and size as well as the diff; the ticket text
+verbatim; and this skill, at
+`/sandbox/.claude/skills/implement-ticket/SKILL.md`. They see neither each
+other's output nor your reasoning. If your runtime cannot spawn subagents,
+run each pass yourself, one at a time, on those four inputs alone - do not
+collapse them into one pass and do not drop any.
 
 Each returns one line per finding:
 
@@ -171,7 +194,7 @@ Each returns one line per finding:
 | --- | --- |
 | intent | Exactly the action item and tasks, no more and no less. Scope creep, missing tasks, acceptance criteria not demonstrably met. |
 | correctness | Every branch and error path. Nil and empty handling, off-by-one, ordering, concurrency (goroutine lifetimes, channel close, races, locks), cleanup (`defer`, `Close`, `cancel`), context propagation. |
-| tests | Tests precede implementation in commit order. Every input class, error path and criterion covered. Hermetic - grep `os.Getenv`, network, `exec.Command`, `time.Sleep`, `time.Now` in pure code, paths outside temp dirs. Complete tables, no vacuous assertions. |
+| tests | The PR body carries red-run output per task, showing each test failed for the intended reason before the code existed. Every input class, error path and criterion covered. Hermetic - grep `os.Getenv`, network, `exec.Command`, `time.Sleep`, `time.Now` in pure code, paths outside temp dirs. Complete tables, no vacuous assertions. |
 | structure | Pure functions, one control loop, orchestrator-to-helper depth, no new globals or package-level mutable state, injected dependencies, small commits, no logic duplicated that should be one pure function. |
 | idiomatic | Language idiom and repository style: formatting (gofumpt, goimports, PEP 8), naming, receivers, `%w` wrapping, `ctx` first, doc comments on exported identifiers, no needless exports. YAML and config comments explain why and match neighbouring files. |
 | lint | The repository's linters - `make lint`, `golangci-lint`, `go vet`, `markdownlint`, `shellcheck` - reported raw. |
@@ -197,6 +220,7 @@ and scope. The body, in this order:
 - Task-to-commit table: task number, commit subject, SHA.
 - Acceptance-criteria checklist with evidence per item - test name, command
   and output, or file:line.
+- Red-run evidence: per task, the failing-test output kept in section 2.
 - Test evidence: commands run, summarised output, coverage for touched
   packages before and after.
 - A runbook per human-gated step: pre-checks, commands, expected output,
@@ -231,7 +255,8 @@ Stop, report, and wait when:
   a host that is not allow-listed, or a missing permission.
 
 Report it where a human will read it - a comment on the ticket (via the
-`jira` skill, per `AGENTS.md`) or the PR body if the PR exists - quoting the
+`jira` skill, per `AGENTS.md`), on the issue (via the `github` skill), or in
+the PR body if the PR exists - quoting the
 literal error, HTTP status, and endpoint or host. Do not retry variations,
 route around the block, or guess past it. Hitting the edge of what this
 sandbox can reach is a normal outcome, not a failure to hide.
@@ -251,7 +276,8 @@ alone, proceed if it does not block your own tests.
 
 ## Done means all of these
 
-- Every task has a commit whose tests precede its implementation.
+- Every task has a commit carrying its tests, with that task's red-run
+  output cited in the PR body.
 - Every acceptance criterion has cited evidence in the PR body.
 - Suite, race detector, lint, vet, coverage gates and verification targets
   are green.

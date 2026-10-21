@@ -98,6 +98,14 @@ anything, run the target repo's own test suite (however it's invoked there -
 the change the ticket describes. Run the same test suite again - it must
 still pass. Commit, with a message that references the issue key.
 
+For how the code itself is written and tested - TDD per task, pure functions
+behind thin I/O shells, hermetic tests, typed errors, security defaults -
+follow sections 2 and 3 of the `implement-ticket` skill. This skill owns the
+run, so its mechanics win wherever the two differ: the branch name above,
+the step 6 fan-out and its CONFIRMED/PLAUSIBLE finding format, the
+non-interactive rules, blockers going on the ticket, and how the PR is
+opened in step 8.
+
 ## 6. Security fan-out - mandatory, both of the following
 
 Before opening any PR, vet the diff two ways:
