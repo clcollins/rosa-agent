@@ -300,7 +300,7 @@ hack/refresh_openshell_token.py -g "$GW_NAME" --if-expiring 90
 hack/refresh_openshell_token.py -g "ROSA Agentic Devx-rosa-agent" \
   --exec -- sandbox create --name "${USER}-$(date +%s)" \
     --from quay.io/redhat-services-prod/rosa-tenant/rosa-agent/rosa-agent:latest \
-    --provider vertex-a \
+    --provider rosa-agent-vertex \
     --provider rosa-agent-github --provider rosa-agent-jira \
     --env JIRA_EMAIL="sd-sre-platform+rosa-agent@redhat.com" \
     --env=JIRA_BASE_URL="https://redhat.atlassian.net" \
@@ -458,7 +458,7 @@ openshell provider profile import -f provider-profiles/google-vertex-ai.yaml
 # from that export, at the profile's actual scope).
 
 # 2. Create the provider (project and region are required config keys)
-openshell provider create --name vertex-a \
+openshell provider create --name rosa-agent-vertex \
   --type google-vertex-ai \
   --credential GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN=placeholder \
   --config VERTEX_AI_PROJECT_ID=rosa-general \
@@ -468,14 +468,14 @@ openshell provider create --name vertex-a \
 #    the private key out of shell history and the environment of later commands)
 env "SA_PRIVATE_KEY=$(vault kv get -mount=osd-sre -format=json rosa-agent \
       | jq -r '.data.data."google-rosa-general-service-account-keyfile".private_key')" \
-  openshell provider refresh configure vertex-a \
+  openshell provider refresh configure rosa-agent-vertex \
     --credential-key GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN \
     --strategy google-service-account-jwt \
     --material client_email=rosa-agent@rosa-general.iam.gserviceaccount.com \
     --secret-material-env private_key=SA_PRIVATE_KEY
 
 # 4. Initial rotate
-openshell provider refresh rotate vertex-a \
+openshell provider refresh rotate rosa-agent-vertex \
   --credential-key GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN
 ```
 
@@ -484,7 +484,7 @@ Claude Code's Vertex AI configuration is baked into the image via `sandbox/setti
 at sandbox create time -- just attach the provider:
 
 ```bash
-  --provider vertex-a
+  --provider rosa-agent-vertex
 ```
 
 ## Konflux configuration

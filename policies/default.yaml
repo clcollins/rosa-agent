@@ -208,7 +208,7 @@ network_policies:
       - path: /usr/local/bin/glab
       - path: /usr/bin/claude
   # Google Vertex AI endpoints are provided by the google-vertex-ai provider
-  # profile (attached via --provider vertex-a). Do not duplicate them here;
+  # profile (attached via --provider rosa-agent-vertex). Do not duplicate them here;
   # overlapping endpoints with differing request_body_credential_rewrite
   # values cause an ambiguity validation failure at sandbox creation.
   # Public container registry (quay.io) — read-only. Used to query the Quay

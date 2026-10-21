@@ -135,9 +135,7 @@ spec:
                     --from "${IMAGE}" \
                     --provider rosa-agent-github \
                     --provider rosa-agent-jira \
-                    --provider rosa-general-vertex \
-                    --env ANTHROPIC_API_KEY=unused \
-                    --env ANTHROPIC_BASE_URL=https://inference.local \
+                    --provider rosa-agent-vertex \
                     --env JIRA_EMAIL="${JIRA_EMAIL}" \
                     --env JIRA_BASE_URL="${JIRA_BASE_URL}" \
                     --no-keep \
