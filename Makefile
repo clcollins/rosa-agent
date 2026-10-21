@@ -32,7 +32,7 @@ check-placeholders:
 # Guard against re-introduction of removed Bedrock/inference.local config.
 # Covers sandbox files, docs, provider profiles, and policies. See MCS-324.
 SANDBOX_FORBIDDEN := inference\.local|ANTHROPIC_API_KEY|ANTHROPIC_BASE_URL|rosa-general-vertex|vertex-a([^i]|$$)
-SANDBOX_LINT_PATHS := sandbox/templates/ sandbox/skills/**/*-cron.yaml README.md provider-profiles/ policies/ docs/
+SANDBOX_LINT_PATHS := sandbox/templates/ 'sandbox/skills/**/*-cron.yaml' README.md provider-profiles/ policies/ docs/
 lint-sandbox:
 	@git grep --extended-regexp --line-number '$(SANDBOX_FORBIDDEN)' -- $(SANDBOX_LINT_PATHS); \
 	rc=$$?; \
