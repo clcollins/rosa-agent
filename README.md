@@ -450,21 +450,25 @@ handled by the provider — it must be passed as a plain `ENV` variable when the
 Hypershell Provider config (using the custom profile from `provider-profiles/google-vertex-ai.yaml`):
 
 ```bash
-# 1. Import the profile (one-time per gateway)
-openshell provider profile lint -f provider-profiles/google-vertex-ai.yaml
+# 1. Import the profile (one-time per gateway; overrides the stock built-in)
 openshell provider profile import -f provider-profiles/google-vertex-ai.yaml
 
-# 2. Create the provider
+# 2. Create the provider (project and region are required config keys)
 openshell provider create --name vertex-a \
   --type google-vertex-ai \
-  --credential GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN
+  --credential GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN \
+  --config VERTEX_AI_PROJECT_ID=rosa-general \
+  --config VERTEX_AI_REGION=global
 
-# 3. Configure SA-JWT refresh (key material from Vault)
-openshell provider refresh configure vertex-a \
-  --credential-key GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN \
-  --strategy google_service_account_jwt \
-  --material client_email=rosa-agent@rosa-general.iam.gserviceaccount.com \
-  --secret-material-env private_key=SA_PRIVATE_KEY
+# 3. Configure SA-JWT refresh (key material from Vault; env prefix keeps
+#    the private key out of shell history and the environment of later commands)
+env "SA_PRIVATE_KEY=$(vault kv get -mount=osd-sre -format=json rosa-agent \
+      | jq -r '.data.data."google-rosa-general-service-account-keyfile".private_key')" \
+  openshell provider refresh configure vertex-a \
+    --credential-key GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN \
+    --strategy google-service-account-jwt \
+    --material client_email=rosa-agent@rosa-general.iam.gserviceaccount.com \
+    --secret-material-env private_key=SA_PRIVATE_KEY
 
 # 4. Initial rotate
 openshell provider refresh rotate vertex-a \

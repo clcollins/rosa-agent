@@ -17,19 +17,22 @@
 #      substituted into the body; a sentinel is an opaque placeholder and
 #      forwarding it as text leaks nothing.
 #
-# Import:
-#   openshell provider profile lint -f provider-profiles/google-vertex-ai.yaml
+# Import (overrides the stock built-in; lint rejects the duplicate ID, which
+# is expected -- go straight to import):
 #   openshell provider profile import -f provider-profiles/google-vertex-ai.yaml
 #
 # Create provider (SA key for production):
 #   openshell provider create --name vertex-a --type google-vertex-ai \
-#     --credential GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN
+#     --credential GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN \
+#     --config VERTEX_AI_PROJECT_ID=rosa-general \
+#     --config VERTEX_AI_REGION=global
 #
-#   openshell provider refresh configure vertex-a \
-#     --credential-key GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN \
-#     --strategy google_service_account_jwt \
-#     --material client_email=<SA_EMAIL> \
-#     --secret-material-env private_key=<ENV_VAR_WITH_KEY>
+#   env "SA_PRIVATE_KEY=..." \
+#     openshell provider refresh configure vertex-a \
+#       --credential-key GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN \
+#       --strategy google-service-account-jwt \
+#       --material client_email=<SA_EMAIL> \
+#       --secret-material-env private_key=SA_PRIVATE_KEY
 #
 #   openshell provider refresh rotate vertex-a \
 #     --credential-key GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN
@@ -76,6 +79,7 @@ credentials:
           description: Optional delegated user email for domain-wide delegation
           required: false
           secret: false
+# gcloud_adc_token is retained for local dev; production uses SA-JWT only.
   - name: gcloud_adc_token
     description: Google Cloud access token refreshed via gcloud Application Default Credentials
     env_vars:
