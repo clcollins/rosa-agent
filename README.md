@@ -24,7 +24,7 @@ Future:
 
 ## UBI9 Base Image
 
-The sandbox image (`Containerfile`) is a multi-stage build on the Red Hat `registry.access.redhat.com/ubi9/ubi:9.8` base image rather than the Ubuntu-based NVIDIA OpenShell-Community image. Even so, it inherits the OpenShell scaffold from the NVIDIA base image — the agent skills (e.g. `github/SKILL.md`) are extracted via `COPY --from` and merged with our own skills under `/sandbox/.agents/skills/`, and the build mirrors the NVIDIA user model (supervisor + sandbox users, `HOME=/sandbox`, `/etc/openshell/policy.yaml`). On top of UBI9 it layers the `go-toolset` RPM and pinned Go tooling, Claude Code from Anthropic's signed RPM repo, and supporting CLIs (gh, golangci-lint, staticcheck, shellcheck), then pre-seeds Claude Code trust state and Bedrock/Jira runtime defaults so the sandbox runs non-interactively. WDYT?
+The sandbox image (`Containerfile`) is a multi-stage build on the Red Hat `registry.access.redhat.com/ubi9/ubi:9.8` base image rather than the Ubuntu-based NVIDIA OpenShell-Community image. Even so, it inherits the OpenShell scaffold from the NVIDIA base image — the agent skills (e.g. `github/SKILL.md`) are extracted via `COPY --from` and merged with our own skills under `/sandbox/.agents/skills/`, and the build mirrors the NVIDIA user model (supervisor + sandbox users, `HOME=/sandbox`, `/etc/openshell/policy.yaml`). On top of UBI9 it layers the `go-toolset` RPM and pinned Go tooling, Claude Code from Anthropic's signed RPM repo, and supporting CLIs (gh, golangci-lint, staticcheck, shellcheck), then pre-seeds Claude Code trust state and Vertex AI/Jira runtime defaults so the sandbox runs non-interactively. WDYT?
 
 Future consideations should include perhaps a non-Golang/language Boilerplate [openshift/boilerplate](https://github.com/openshift/boilerplate) image scaffolding for building/maintaining.
 
@@ -62,9 +62,10 @@ It defines two things:
     `/dev/urandom`) are added automatically by the supervisor.
 * **`network_policies`** — per-service egress allow-lists, each scoped to specific binaries
     (`/usr/bin/claude`, `git`, `gh`, `glab`, `go`, `curl`, `skopeo`) with `enforce` enforcement:
-  * **Model inference** — Bedrock (`bedrock-runtime.us-east-2`, SigV4-signed), Anthropic API
-      (`api.anthropic.com`, for Claude Code WebFetch/WebSearch), and Google Vertex AI
-      (`oauth2.googleapis.com`, `aiplatform.googleapis.com`).
+  * **Model inference** — Anthropic API (`api.anthropic.com`, for Claude Code WebFetch/WebSearch).
+      Google Vertex AI endpoints are provided by the `google-vertex-ai` provider profile
+      (attached via `--provider`); they are not declared in the baked policy to avoid endpoint
+      ambiguity with the profile's auto-injected entries.
   * **GitHub** — read-write to `api.github.com` and `github.com`; read-only to
       `codeload.github.com`, `objects.githubusercontent.com`, and GitHub Actions hosts (CI status).
   * **GitLab** — read-write to `gitlab.cee.redhat.com` (git + `glab`).
@@ -105,7 +106,15 @@ openshell provider profile lint -f provider-profiles/<profile>.yaml
 openshell provider profile import -f provider-profiles/<profile>.yaml
 ```
 
-Currently there are two profiles:
+Currently there are three profiles:
+
+* **`google-vertex-ai.yaml`** — Google Vertex AI inference for Claude Code. Based on the stock
+    `google-vertex-ai` profile with two edits: `binaries` set to `[/usr/bin/curl, /usr/bin/claude]`
+    (the stock profile has none, so every connection is denied), and
+    `allow_uninspected_credentials: true` on aiplatform endpoints (disables the body marker guard
+    that otherwise denies requests containing credential-placeholder literals from conversation
+    history -- safe because `request_body_credential_rewrite` is `false`, so no secret is ever
+    substituted into the body).
 
 * **`atlassian-jira.yaml`** — Jira Cloud access for sandboxed agents, with a deliberately narrow
     allow-list:
@@ -291,9 +300,7 @@ hack/refresh_openshell_token.py -g "$GW_NAME" --if-expiring 90
 hack/refresh_openshell_token.py -g "ROSA Agentic Devx-rosa-agent" \
   --exec -- sandbox create --name "${USER}-$(date +%s)" \
     --from quay.io/redhat-services-prod/rosa-tenant/rosa-agent/rosa-agent:latest \
-    --provider rosa-general-vertex \
-    --env=ANTHROPIC_BASE_URL=https://inference.local \
-    --env=ANTHROPIC_API_KEY=unused \
+    --provider vertex-a \
     --provider rosa-agent-github --provider rosa-agent-jira \
     --env JIRA_EMAIL="sd-sre-platform+rosa-agent@redhat.com" \
     --env=JIRA_BASE_URL="https://redhat.atlassian.net" \
@@ -440,34 +447,36 @@ handled by the provider — it must be passed as a plain `ENV` variable when the
 * ROSA-Agent has a service account under the `rosa-general` GCP account.
 * Credentials are stored in Vault: <https://vault.devshift.net/ui/vault/secrets/osd-sre>
   
-Hypershell Provider config:
-
-```txt
-Provider:
-
-  Id: a6959ff9-5277-4d9b-b547-f875c75a2cc2
-  Name: rosa-general-vertex
-  Type: google-vertex-ai
-  Resource version: 131
-  Credential keys: GOOGLE_SERVICE_ACCOUNT_KEY, GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN
-  Config keys: VERTEX_AI_REGION, VERTEX_AI_PROJECT_ID
-```
+Hypershell Provider config (using the custom profile from `provider-profiles/google-vertex-ai.yaml`):
 
 ```bash
-export GOOGLE_SERVICE_ACCOUNT_KEY=$(vault kv get -mount=osd-sre -field="google-rosa-general-service-account-keyfile" rosa-agent)
-openshell provider create --name "rosa-general-vertex" \
+# 1. Import the profile (one-time per gateway)
+openshell provider profile lint -f provider-profiles/google-vertex-ai.yaml
+openshell provider profile import -f provider-profiles/google-vertex-ai.yaml
+
+# 2. Create the provider
+openshell provider create --name vertex-a \
   --type google-vertex-ai \
-  --credential GOOGLE_SERVICE_ACCOUNT_KEY \
-  --config VERTEX_AI_PROJECT_ID=hypershell-976970 \
-  --config VERTEX_AI_REGION=global
+  --credential GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN
+
+# 3. Configure SA-JWT refresh (key material from Vault)
+openshell provider refresh configure vertex-a \
+  --credential-key GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN \
+  --strategy google_service_account_jwt \
+  --material client_email=rosa-agent@rosa-general.iam.gserviceaccount.com \
+  --secret-material-env private_key=SA_PRIVATE_KEY
+
+# 4. Initial rotate
+openshell provider refresh rotate vertex-a \
+  --credential-key GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN
 ```
 
-Note: Sandboxes must be run with the `ANTHROPIC_BASE_URL` and `ANTHROPIC_API_KEY` set as follows to work with Vertex:
+Claude Code's Vertex AI configuration is baked into the image via `sandbox/settings.json`
+(using `apiKeyHelper` to read the sentinel at runtime). No `--env` overrides are needed
+at sandbox create time -- just attach the provider:
 
 ```bash
-  --provider rosa-general-vertex \
-  --env=ANTHROPIC_BASE_URL=https://inference.local \
-  --env=ANTHROPIC_API_KEY=unused
+  --provider vertex-a
 ```
 
 ## Konflux configuration

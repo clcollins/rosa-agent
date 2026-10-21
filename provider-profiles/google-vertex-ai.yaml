@@ -1,0 +1,140 @@
+# Google Vertex AI provider profile for rosa-agent sandboxes.
+#
+# Exported from the working profile on ra-test-hyp1 (OpenShell v0.1.3-rhaiv.3,
+# 2026-10-20). This is the stock google-vertex-ai profile with two edits:
+#
+#   1. binaries: [/usr/bin/curl, /usr/bin/claude]
+#      The stock profile has no binaries list, which means the OPA engine denies
+#      every connection (no binary is authorized to reach the endpoints).
+#
+#   2. allow_uninspected_credentials: true on all aiplatform endpoints.
+#      Claude Code's request body (~88KB) includes conversation history, which
+#      may contain credential-placeholder literals from files the agent has read
+#      (e.g. OpenShell docs, policy files, this repo's own skills). With the
+#      body scan active, the supervisor's marker guard (NVIDIA/OpenShell#2904)
+#      denies the request (403) on malformed markers. Disabling the scan is safe
+#      because request_body_credential_rewrite is false -- no secret is ever
+#      substituted into the body; a sentinel is an opaque placeholder and
+#      forwarding it as text leaks nothing.
+#
+# Import:
+#   openshell provider profile lint -f provider-profiles/google-vertex-ai.yaml
+#   openshell provider profile import -f provider-profiles/google-vertex-ai.yaml
+#
+# Create provider (SA key for production):
+#   openshell provider create --name vertex-a --type google-vertex-ai \
+#     --credential GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN
+#
+#   openshell provider refresh configure vertex-a \
+#     --credential-key GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN \
+#     --strategy google_service_account_jwt \
+#     --material client_email=<SA_EMAIL> \
+#     --secret-material-env private_key=<ENV_VAR_WITH_KEY>
+#
+#   openshell provider refresh rotate vertex-a \
+#     --credential-key GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN
+
+id: google-vertex-ai
+display_name: Google Vertex AI
+description: Google Vertex AI inference provider (Anthropic Claude, Gemini, and third-party models)
+category: inference
+credentials:
+  - name: service_account_key
+    description: Google service account JSON refresh bootstrap material; not injected into sandboxes
+    env_vars:
+      - GOOGLE_SERVICE_ACCOUNT_KEY
+    required: false
+    auth_style: ""
+    header_name: ""
+    query_param: ""
+  - name: service_account_token
+    description: Google Cloud access token refreshed from service account JWT material
+    env_vars:
+      - GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN
+      - VERTEX_AI_SERVICE_ACCOUNT_TOKEN
+    required: false
+    auth_style: bearer
+    header_name: authorization
+    query_param: ""
+    refresh:
+      strategy: google_service_account_jwt
+      token_url: https://oauth2.googleapis.com/token
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+      refresh_before: 300s
+      max_lifetime: 3600s
+      material:
+        - name: client_email
+          description: Google service account email
+          required: true
+          secret: false
+        - name: private_key
+          description: Google service account private key
+          required: true
+          secret: true
+        - name: subject
+          description: Optional delegated user email for domain-wide delegation
+          required: false
+          secret: false
+  - name: gcloud_adc_token
+    description: Google Cloud access token refreshed via gcloud Application Default Credentials
+    env_vars:
+      - GOOGLE_VERTEX_AI_TOKEN
+      - VERTEX_AI_TOKEN
+    required: false
+    auth_style: bearer
+    header_name: authorization
+    query_param: ""
+    refresh:
+      strategy: oauth2_refresh_token
+      token_url: https://oauth2.googleapis.com/token
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+      refresh_before: 300s
+      max_lifetime: 3600s
+      material:
+        - name: client_id
+          description: Google OAuth2 client ID from gcloud ADC
+          required: true
+          secret: false
+        - name: client_secret
+          description: Google OAuth2 client secret from gcloud ADC
+          required: true
+          secret: true
+        - name: refresh_token
+          description: Google OAuth2 refresh token from gcloud ADC
+          required: true
+          secret: true
+endpoints:
+  - host: "*-aiplatform.googleapis.com"
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+    allow_uninspected_credentials: true
+  - host: aiplatform.googleapis.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+    allow_uninspected_credentials: true
+  - host: aiplatform.us.rep.googleapis.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+    allow_uninspected_credentials: true
+  - host: aiplatform.eu.rep.googleapis.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+    allow_uninspected_credentials: true
+binaries:
+  - /usr/bin/curl
+  - /usr/bin/claude
+inference_capable: true
+discovery:
+  credentials:
+    - service_account_token
+    - gcloud_adc_token
