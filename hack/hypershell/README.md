@@ -11,7 +11,13 @@ nothing runs automatically.
 | --- | --- |
 | `validate.py` | Correctness gate for `.hypershell/`. Run via `make hypershell-validate`. |
 | `access.yaml` | The access policy: tiers, service-account roles, expiry. |
-| `README.md` | This file: the manual `hsctl` runbook. |
+| `README.md` | This file: the manual `hsctl` runbook for gateways and access. |
+| `providers.md` | Putting provider profiles and providers on a gateway, via `openshell`. |
+
+This file covers the HyperShell management API (`hsctl`): creating gateways,
+granting access, minting service accounts. Credential providers live on the
+gateway itself and are a separate surface — see
+[`providers.md`](./providers.md), which assumes the gateway work here is done.
 
 ## Why these steps are manual
 

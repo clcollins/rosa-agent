@@ -33,11 +33,9 @@
 #   openshell -g <gateway> profile import --file provider-profiles/github.yaml --global
 #
 # Create the provider. The credential is read from the environment so the token
-# never appears in a command line or shell history. Note the vault key: it is
-# github-openshift-org-token, NOT github-token. Both are 93-character
-# fine-grained PATs so nothing distinguishes them by shape, but github-token
-# returns "Bad credentials" while github-openshift-org-token authenticates as
-# the rosa-agent bot.
+# never appears in a command line or shell history. Confirm the token resolves
+# to the agent's bot account first (`gh api user --jq .login`); a wrong one
+# fails only at request time with a generic authentication error.
 #   GH_TOKEN="$(vault kv get -field=github-openshift-org-token osd-sre/rosa-agent)" \
 #     openshell -g <gateway> provider create --name rosa-agent-github \
 #       --type github --global-profile --credential GH_TOKEN
