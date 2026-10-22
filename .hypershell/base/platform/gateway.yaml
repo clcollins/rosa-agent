@@ -28,6 +28,29 @@ kind: Gateway
 metadata:
   name: rosa-agent
 spec:
+  # Deliberately the same two labels the hypershell reference tree uses for
+  # its own agents, and deliberately no more.
+  #
+  # hyp0 and hyp1 are the HyperShell team's own integration and staging tiers,
+  # so rosa-agent should get whatever those tiers offer rather than steering
+  # around their topology -- narrowing the selector would mean testing against
+  # a configuration nobody else runs.
+  #
+  # Two consequences, both accepted:
+  #
+  #   - Which cluster a gateway lands on is the control plane's choice when
+  #     several match, and may differ between instances and between
+  #     recreates. Observed 2026-10-22: hyp0 has three matching clusters and
+  #     chose a kata one; hyp2 has three and chose a non-kata one; hyp1 has
+  #     exactly one (its hub). That variation is the platform behaviour we
+  #     want to experience, not paper over.
+  #   - runtime/kata is available on hyp0 and hyp2 but not hyp1, so it could
+  #     never be uniform here anyway. rosa-agent does not require it.
+  #
+  # gateway-version is not pinned: only hyp0-spoke0 advertises one and it is
+  # provider/aws, so a version selector cannot be satisfied anywhere in this
+  # fleet. Gateways are not upgradeable in place -- see hack/hypershell/README.md
+  # for the delete-and-recreate procedure a new release requires.
   placement:
     selector:
       - provider/ibm
