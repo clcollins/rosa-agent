@@ -247,14 +247,32 @@ creating a new empty provider. `--no-keep` deletes the sandbox afterwards.
 
 Read the failures carefully, because the status code localises the fault:
 
-- **401 from the upstream service** — the request reached it, so the profile's
-  `binaries` list and endpoint rules are correct and the *credential* is wrong.
+- **401 from the upstream service** — the request reached it, so egress was
+  permitted and the *credential* is wrong.
 - **403 from the proxy** — the request never left, so the credential is
-  untested and the profile is wrong: usually a `binaries` path that does not
-  exist in the image, since matching is by exact path and a wrong one denies
-  everything silently.
+  untested and something denied the egress.
 
-That distinction turns a vague failure into a one-step diagnosis.
+That distinction alone turns a vague failure into a one-step diagnosis.
+
+On a 403, note there are **two** things that can deny it, because egress is
+governed by the provider profile *and* by the sandbox policy the image carries
+at `/etc/openshell/policy.yaml` (built from `policies/default.yaml`). Not
+passing `--policy` does not mean no policy applied — it means the image
+default did. Precedence is:
+
+```text
+/etc/openshell/policy.yaml  <  OPENSHELL_SANDBOX_POLICY  <  --policy
+```
+
+Both layers pin which binaries may reach which hosts, and both match binaries
+by **exact path**, so a path that does not exist in the image denies every
+call silently. That is the usual cause. Check the profile's `binaries` list
+first, since it is the one being changed; then the policy block for that host.
+
+The two layers are deliberately not redundant. The policy omits some hosts
+entirely so the profile can compose narrower method- and path-level rules for
+them — a coarse allow in the policy would union over the profile's restriction
+and defeat it. So "add it to the policy" is not a safe default fix.
 
 ## Known rough edges
 
