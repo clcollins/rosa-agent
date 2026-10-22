@@ -72,24 +72,35 @@ everything needed. Nothing has to be looked up in `hsctl`.
 rather than passing it on a command line where it would reach your shell
 history and the process table:
 
+Use `mktemp` rather than a fixed path. A predictable name in a world-writable
+directory invites squatting and symlink games on a shared host, and costs
+nothing to avoid:
+
 ```sh
-umask 077
+secret_file="$(mktemp)"
+chmod 600 "$secret_file"
 jq --raw-output --join-output '.credential.client_secret' \
-  <service-account-file>.json > /tmp/sa-secret
+  <service-account-file>.json > "$secret_file"
 ```
 
-Then mint, overriding every value Vault would otherwise supply:
+Then mint. Note the `env -u`: openshellctl resolves auth from Vault whenever
+`OPENSHELL_VAULT_KV_MOUNT` and `OPENSHELL_VAULT_KV_PATH` are set, and those
+values describe **one** environment. Left set, they override what you pass
+here, and a Vault outage or expired Vault token fails the command outright
+even though every value it needs was supplied by flag.
 
 ```sh
-openshellctl -g <registration> token refresh --write --no-browser \
-  --client-secret-file /tmp/sa-secret \
-  --oidc-issuer    "$(jq -r '.credential.issuer'    <service-account-file>.json)" \
-  --oidc-client-id "$(jq -r '.credential.client_id' <service-account-file>.json)" \
-  --oidc-audience  "$(jq -r '.credential.audience'  <service-account-file>.json)"
+env -u OPENSHELL_VAULT_KV_MOUNT -u OPENSHELL_VAULT_KV_PATH \
+    -u OPENSHELL_VAULT_FIELD_PREFIX \
+  openshellctl -g <registration> token refresh --write --no-browser \
+    --client-secret-file "$secret_file" \
+    --oidc-issuer    "$(jq -r '.credential.issuer'    <service-account-file>.json)" \
+    --oidc-client-id "$(jq -r '.credential.client_id' <service-account-file>.json)" \
+    --oidc-audience  "$(jq -r '.credential.audience'  <service-account-file>.json)"
 ```
 
 ```sh
-rm /tmp/sa-secret
+rm --force "$secret_file"
 ```
 
 `--write` stores the token in the schema `openshell` reads, so you authenticate
@@ -151,6 +162,32 @@ openshell -g <registration> profile import --global --from provider-profiles
 `openshell provider profile ...` is a registered alias for `openshell profile
 ...`; both work, the short form is canonical.
 
+### Updating a profile that is already imported
+
+`profile import` is for the first write. Changing a profile afterwards needs
+`profile update`, which requires a non-zero `resource_version` — a value the
+server assigns and the repo file deliberately does not carry, because it would
+go stale on every update and make the file wrong the moment it was committed.
+
+So read the current version off the gateway and splice it into a throwaway copy
+rather than editing the repo file:
+
+```sh
+openshell -g <registration> profile export <profile-id> --global \
+  | grep '^resource_version:'
+```
+
+Add that one line to a temp copy of the repo file, then:
+
+```sh
+openshell -g <registration> profile update <profile-id> --file <temp-file> --global
+```
+
+**Editing the repo file does not change the gateway.** Lint and review act on
+the file; the gateway keeps serving what was last imported. A validation run
+after editing but before updating tests the *old* profile and will look like
+the change did not work.
+
 ## Creating providers
 
 A profile describes a capability. A provider binds a credential to it.
@@ -177,16 +214,35 @@ without printing any value:
 vault kv get -format=json <rosa-agent-secret-path> | jq -r '.data.data | keys[]'
 ```
 
-**Verify a credential before wiring it in.** A wrong or expired one fails only
-at request time, inside a sandbox, with a generic authentication error — a long
-way from where you set it. One read-only call rules that out:
+**Verify the capability you need, not just the identity.** A wrong credential
+fails only at request time, inside a sandbox, with a generic authentication
+error — a long way from where you set it.
+
+Confirming the identity is the easy half:
 
 ```sh
 SOME_TOKEN="$(vault kv get -field=<field> <rosa-agent-secret-path>)" \
   gh api user --jq '.login'
 ```
 
-The identity it returns should be the agent's bot account, not a person.
+It should return the agent's bot account, not a person. But passing this
+proves very little. A secret can hold several credentials for one service
+that differ only in *permission*: one that authenticates and reads, another
+that can also write. The read-only one passes every identity check, and the
+service's own permissions API may still report write access — because that
+describes what the **account** may do, not what the **token** is scoped to.
+
+So exercise the operation the agent actually performs. For a credential that
+has to push, a dry-run push reaches the remote and returns its verdict
+without changing anything:
+
+```sh
+git push --dry-run <remote> HEAD:refs/heads/probe
+```
+
+This is not hypothetical. A provider was bound to a credential that passed
+the identity check, reported write access, and could not push; nothing
+surfaced it until a scheduled job failed.
 
 **Some fields are nested objects, not strings.** A service-account keyfile is
 stored as an object, so `vault kv get -field=` renders Go map syntax rather than
@@ -254,6 +310,24 @@ Read the failures carefully, because the status code localises the fault:
 
 That distinction alone turns a vague failure into a one-step diagnosis.
 
+Both layers return 403, so tell them apart by shape rather than by code. A
+proxy denial is structured JSON naming the policy that refused it:
+
+```json
+{"error":"policy_denied","policy":"_provider_<name>","rule":"DELETE /…",
+ "layer":"l7","protocol":"rest","method":"DELETE","host":"…",
+ "binary":"/usr/local/bin/gh","rule_missing":{…}}
+```
+
+`rule_missing` spells out the rule that would have allowed it, which is the
+fastest route to a fix. An upstream denial looks nothing like this — for git
+operations it arrives prefixed with `remote:`, and for REST it is the
+service's own error body.
+
+Note this means **cleanup cannot run inside the sandbox** if the policy does
+not allow the cleanup verb. Anything a validation run creates has to be
+removed from the host afterwards.
+
 On a 403, note there are **two** things that can deny it, because egress is
 governed by the provider profile *and* by the sandbox policy the image carries
 at `/etc/openshell/policy.yaml` (built from `policies/default.yaml`). Not
@@ -273,6 +347,34 @@ The two layers are deliberately not redundant. The policy omits some hosts
 entirely so the profile can compose narrower method- and path-level rules for
 them — a coarse allow in the policy would union over the profile's restriction
 and defeat it. So "add it to the policy" is not a safe default fix.
+
+### The opposite failure: a rule that should deny, and does not
+
+Every endpoint block must set `enforcement: enforce` explicitly. The parser
+matches that one exact string and falls back to `audit` for everything else:
+
+```rust
+Some("enforce") => EnforcementMode::Enforce,
+_               => EnforcementMode::Audit,
+```
+
+Audit **allows the traffic** and merely logs the violation. So the default is
+fail-open, and it is reached by omitting the field, leaving it empty, or
+miscasing it as `Enforce`. None of those are errors at lint or import time.
+
+The symptom is a request you believe is denied succeeding anyway. A policy
+reviewed only by reading the YAML will look correct. Treat any block without a
+literal `enforcement: enforce` as permitting whatever it describes, and prove
+denials by exercising them rather than by inspection.
+
+Relatedly, `access: read-write` does not mean every verb. For REST it expands
+to exactly `GET`, `HEAD`, `OPTIONS`, `POST`, `PUT`, `PATCH` — **`DELETE` is
+not included**, and needs either its own rule or `access: full`. A delete
+failing while reads and writes succeed is this, not a credential problem.
+
+The shorthands expand differently per protocol, so do not carry the REST
+intuition across. For `graphql`, `read-write` is `query` plus `mutation`; for
+`websocket` it is `GET` plus `WEBSOCKET_TEXT`. Only `full` is `*` everywhere.
 
 ## Known rough edges
 

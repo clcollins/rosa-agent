@@ -12,39 +12,29 @@ filesystem_policy:
     - /dev/null
 
 network_policies:
-  github_api:
-    name: github-api
-    endpoints:
-      - host: api.github.com
-        port: 443
-        access: read-write
-        protocol: rest
-        enforcement: enforce
-    binaries:
-      # gh installs to /usr/local/bin/gh (COPY --from=builder in the
-      # Containerfile), not /usr/bin/gh. Same failure mode already
-      # documented below for go_modules/go: the proxy allow-list matches
-      # per-binary-path, so the wrong path here silently defeated every
-      # rule in this block.
-      - path: /usr/local/bin/gh
-      - path: /usr/bin/git
-      - path: /usr/bin/claude
-  github_git:
-    name: github-git
-    endpoints:
-      - host: github.com
-        port: 443
-        access: read-write
-        protocol: rest
-        enforcement: enforce
-      - host: codeload.github.com
-        port: 443
-        access: read-only
-        protocol: rest
-        enforcement: enforce
-    binaries:
-      - path: /usr/bin/git
-      - path: /usr/bin/claude
+  # NOTE: api.github.com and github.com are deliberately absent. They moved to
+  # provider-profiles/github.yaml, which is attached per sandbox via
+  # `--provider rosa-agent-github`.
+  #
+  # They were here as coarse read-write blocks, and that actively defeated the
+  # profile's narrower rules. L7 authorization is a union across every matching
+  # endpoint: any single allow admits the request, and only an explicit deny
+  # overrides. So a `read-write` on github.com here expanded to POST ** and
+  # permitted git-receive-pack regardless of the profile carefully allowing
+  # only git-upload-pack -- the same trap this file already documents for Jira
+  # and PagerDuty below.
+  #
+  # With the grants in the profile instead, the method/path rules there are the
+  # only thing permitting GitHub traffic, so they mean what they say. The
+  # consequence to remember: a sandbox created WITHOUT that provider attached
+  # now has no GitHub egress at all.
+  #
+  # The two remaining GitHub-adjacent blocks (github_assets, github_actions)
+  # stay here on purpose. They are scoped to curl, and a profile's `binaries`
+  # list applies to all of its endpoints, so folding them in would hand curl
+  # access to api.github.com and github.com as well -- a widening, not a
+  # tightening.
+
   # Claude Code WebFetch safety preflight and WebSearch backend
   anthropic_api:
     name: anthropic-api

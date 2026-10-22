@@ -18,7 +18,7 @@
 # It cannot live in .hypershell/: access grants are stored as RoleBindings,
 # which are not one of the seven importable Kinds, so the declarative import
 # renders them and drops them without an error. Service accounts are not a
-# Kind at all. Both are applied by hand -- see README.md.
+# Kind at all. Both are applied by hand -- see hypershell-gateways.md.
 #
 # The same matrix applies to all three gateways (integration on hyp0,
 # staging on hyp1, prod on hyp2). Each instance has its own database, so the

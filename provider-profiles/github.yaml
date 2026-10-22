@@ -4,27 +4,42 @@
 # built-in profiles, so without this import there is no `github` provider type
 # and `provider create --type github` fails with "provider profile not found".
 #
-# Two deliberate deltas from upstream:
+# Three deliberate deltas from upstream:
 #
-#   1. binaries: upstream names /usr/bin/gh, which does not exist here. The
-#      Containerfile installs gh to /usr/local/bin/gh. binaries is the
-#      least-privilege control deciding which processes may reach the
-#      endpoints, and it matches on exact path, so the wrong path silently
-#      denies every connection. /usr/bin/claude is included because Claude
-#      Code itself reaches the GitHub API; policies/default.yaml already lists
-#      it for the same reason.
+#   1. binaries is narrowed, not corrected. Upstream lists
+#      [/usr/bin/gh, /usr/local/bin/gh, /usr/bin/git, /usr/local/bin/git] to
+#      cover several image layouts. Here gh exists only at /usr/local/bin/gh
+#      and git only at /usr/bin/git, so the other two are dropped, and
+#      /usr/bin/claude is added because Claude Code reaches the GitHub API
+#      itself -- policies/default.yaml lists it for the same reason. binaries
+#      matches on exact path and decides which processes may reach these
+#      endpoints, so a path absent from the image denies silently rather than
+#      failing loudly.
 #
 #   2. api.github.com is read-write, not upstream's read-only. rosa-agent
 #      creates forks, pull requests, issues and labels through fixed
 #      `gh api -X POST` calls (see sandbox/skills/github-labels/
-#      open-labeled-pr.sh), all of which the read-only preset blocks. This is
-#      not a widening: policies/default.yaml already grants github_api
-#      read-write for the same binaries. The profile now says so explicitly
-#      rather than relying on the baked policy to union over it.
+#      open-labeled-pr.sh), all of which the read-only preset blocks.
 #
-# github.com keeps upstream's rules: clone and fetch work, push
-# (git-receive-pack) stays denied. rosa-agent's PR flow is REST-only and does
-# not push branches, so widening that has no justification today.
+#   3. github.com allows POST to */git-receive-pack, which upstream omits.
+#      The agent genuinely pushes: scripts/sync_fork.sh runs `git push origin`
+#      as the first step of both job-image-vuln-check and pmr-action-item, and
+#      job-sop-improve pushes a branch before opening its PR.
+#
+# Neither 2 nor 3 widens the sandbox. policies/default.yaml already grants
+# api.github.com and github.com read-write for these same binaries, and L7
+# authorization is a union across every matching rule -- any single allow
+# admits the request. The effective permission is unchanged; what changes is
+# that this profile now states what it depends on instead of silently relying
+# on the baked policy to permit it, so it keeps working if that policy is
+# tightened.
+#
+# The corollary matters more than the deltas: a profile can restate or widen
+# what the policy allows, but it cannot narrow it. An earlier version of this
+# comment claimed push was denied because this profile omitted receive-pack.
+# That was never true in a sandbox carrying the baked policy, which allows
+# POST ** on github.com. A real restriction needs an explicit deny, or a
+# narrower rule in policies/default.yaml itself.
 #
 # Lint and import. `openshell provider profile ...` also works -- it is a
 # registered alias for `openshell profile ...` -- but the short form is the
@@ -33,12 +48,24 @@
 #   openshell -g <gateway> profile import --file provider-profiles/github.yaml --global
 #
 # Create the provider. The credential is read from the environment so the token
-# never appears in a command line or shell history. Confirm the token resolves
-# to the agent's bot account first (`gh api user --jq .login`); a wrong one
-# fails only at request time with a generic authentication error.
-#   GH_TOKEN="$(vault kv get -field=github-openshift-org-token osd-sre/rosa-agent)" \
+# never appears in a command line or shell history.
+#   GH_TOKEN="$(vault kv get -field=github-token osd-sre/rosa-agent)" \
 #     openshell -g <gateway> provider create --name rosa-agent-github \
 #       --type github --global-profile --credential GH_TOKEN
+#
+# Use the github-token field: it holds the classic PAT with full repo scope,
+# which is the credential that can push. The secret also has
+# github-openshift-org-token, a fine-grained PAT -- that one authenticates as
+# the bot and can read the forks, but its Contents permission is read-only, so
+# every `git push` fails.
+#
+# Verify the CAPABILITY, not just the identity, before binding a credential.
+# Checking `gh api user --jq .login` is not enough: the fine-grained token
+# passes that, reports push: true on the repo (because that field describes
+# the account, not the token), and still cannot push. The cheap decisive check
+# is a dry-run push, which reaches GitHub and reports its verdict:
+#   git push --dry-run <fork> HEAD:refs/heads/probe
+# A wrong credential is otherwise invisible until a scheduled job fails.
 
 id: github
 display_name: GitHub
@@ -68,9 +95,13 @@ endpoints:
     protocol: graphql
     access: read-only
     enforcement: enforce
-  # Git transport. Smart HTTP needs POST to */git-upload-pack for clone and
-  # fetch, which the read-only preset blocks, so the rules are spelled out.
-  # Push (git-receive-pack) is deliberately absent.
+  # Git transport. Smart HTTP tunnels both directions over POST, which the
+  # read-only preset blocks, so the two service endpoints are named
+  # explicitly rather than taking a blanket read-write.
+  #   git-upload-pack  -> clone and fetch
+  #   git-receive-pack -> push
+  # Both are required; see delta 3 in the header. Spelling them out keeps any
+  # other POST to github.com denied, which a read-write preset would not.
   - host: github.com
     port: 443
     protocol: rest
@@ -80,4 +111,15 @@ endpoints:
       - allow: { method: HEAD, path: "**" }
       - allow: { method: OPTIONS, path: "**" }
       - allow: { method: POST, path: "/**/git-upload-pack" }
+      - allow: { method: POST, path: "/**/git-receive-pack" }
+  # Clone redirects here for pack data. Read-only; no POST needed.
+  - host: codeload.github.com
+    port: 443
+    protocol: rest
+    access: read-only
+    enforcement: enforce
+# Profile-level: this list applies to every endpoint above, so it is kept to
+# the three binaries that actually reach GitHub. curl is deliberately absent
+# -- the asset and Actions hosts it needs stay in policies/default.yaml,
+# because adding curl here would also grant it api.github.com and github.com.
 binaries: [/usr/local/bin/gh, /usr/bin/git, /usr/bin/claude]
