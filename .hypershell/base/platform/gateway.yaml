@@ -49,8 +49,9 @@ spec:
   #
   # gateway-version is not pinned: only hyp0-spoke0 advertises one and it is
   # provider/aws, so a version selector cannot be satisfied anywhere in this
-  # fleet. Gateways are not upgradeable in place -- see hack/hypershell/README.md
-  # for the delete-and-recreate procedure a new release requires.
+  # fleet. Gateways are not upgradeable in place -- see
+  # docs/hypershell-gateways.md for the delete-and-recreate procedure a new
+  # release requires.
   placement:
     selector:
       - provider/ibm

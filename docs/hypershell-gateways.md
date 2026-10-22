@@ -1,23 +1,23 @@
-# `hack/hypershell/`
+# Gateways, access and service accounts
 
 The parts of the HyperShell configuration that **cannot** live in
 `.hypershell/`, because the declarative import would silently drop them or
 because they are not a declarative Kind at all.
 
-Everything here is a runbook. Nothing in this directory is reconciled, and
-nothing runs automatically.
+Everything here is a runbook. None of it is reconciled, and none of it runs
+automatically.
+
+This covers the HyperShell management API (`hsctl`): creating gateways,
+granting access, minting service accounts. Credential providers live on the
+gateway itself and are a separate surface — see
+[`hypershell-providers.md`](./hypershell-providers.md), which assumes the
+gateway work here is done.
 
 | File | Purpose |
 | --- | --- |
-| `validate.py` | Correctness gate for `.hypershell/`. Run via `make hypershell-validate`. |
-| `access.yaml` | The access policy: tiers, service-account roles, expiry. |
-| `README.md` | This file: the manual `hsctl` runbook for gateways and access. |
-| `providers.md` | Putting provider profiles and providers on a gateway, via `openshell`. |
-
-This file covers the HyperShell management API (`hsctl`): creating gateways,
-granting access, minting service accounts. Credential providers live on the
-gateway itself and are a separate surface — see
-[`providers.md`](./providers.md), which assumes the gateway work here is done.
+| [`hypershell-access.yaml`](./hypershell-access.yaml) | The access policy: tiers, service-account roles, expiry. |
+| [`hypershell-providers.md`](./hypershell-providers.md) | Putting provider profiles and providers on a gateway. |
+| `hack/hypershell/validate.py` | Correctness gate for `.hypershell/`. Run via `make hypershell-validate`. |
 
 ## Why these steps are manual
 
@@ -49,11 +49,11 @@ up by name.
 ## Roles
 
 The access policy — which tiers exist and what the service accounts look
-like — is recorded in [`access.yaml`](./access.yaml).
+like — is recorded in [`hypershell-access.yaml`](./hypershell-access.yaml).
 
 Real usernames are deliberately not committed anywhere in this repository.
 It is public, and the grant API takes internal Red Hat directory usernames,
-which differ from the GitHub handles in `OWNERS`. `access.yaml` carries
+which differ from the GitHub handles in `OWNERS`. `hypershell-access.yaml` carries
 `REPLACE_WITH_DIRECTORY_USERNAME` placeholders; substitute the real values
 when running the commands below. The authoritative roster is the gateway
 itself:
@@ -79,7 +79,7 @@ workspace-scoped operation denied — including creating a sandbox — until a
 gateway administrator adds that subject to each workspace by hand. There is
 no `hsctl` command for that, and automatic workspace membership is out of
 scope in version 1. `openshell-admin` is permitted to bypass workspace
-membership, which is why `access.yaml` specifies it.
+membership, which is why `hypershell-access.yaml` specifies it.
 
 Expiry is not optional. The server enforces a policy of 1 hour minimum,
 90 days default and 365 days maximum, so omitting `--expires-in` silently
@@ -146,7 +146,7 @@ GATEWAY_ID=<id from above>
 
 ### 4. Grant access
 
-Run one command per entry under `owners:` in [`access.yaml`](./access.yaml):
+Run one command per entry under `owners:` in [`hypershell-access.yaml`](./hypershell-access.yaml):
 
 ```sh
 hsctl create gatewayAccess --gateway-id "$GATEWAY_ID" --user <username> --role owner
@@ -168,7 +168,7 @@ hsctl update gatewayAccess <user_id> --gateway-id "$GATEWAY_ID" --role admin
 
 ### 5. Create the service account
 
-One per entry under `service_accounts:` in [`access.yaml`](./access.yaml),
+One per entry under `service_accounts:` in [`hypershell-access.yaml`](./hypershell-access.yaml),
 using the `name`, `role` and `expires_in` recorded there:
 
 ```sh
@@ -228,7 +228,7 @@ Order, per instance:
 2. Delete the gateway. This cascades: namespace, workload, grants, service
    accounts.
 3. Re-run steps 2–5 of the runbook above: apply the overlay, find the new ID,
-   re-grant every entry in [`access.yaml`](./access.yaml), re-mint the service
+   re-grant every entry in [`hypershell-access.yaml`](./hypershell-access.yaml), re-mint the service
    account.
 4. Write the new client secret to the secret store, replacing the old one.
 5. Repoint consumers at the new `route_address` and OIDC values.

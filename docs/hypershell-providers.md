@@ -2,10 +2,11 @@
 
 How to get the credential providers onto a rosa-agent gateway, by hand.
 
-This is the `openshell` side of the platform. [`README.md`](./README.md) covers
-the other half — creating the gateway itself, access grants and service
-accounts, via `hsctl`. Do that first: this runbook assumes a gateway exists and
-a service account for it has been minted.
+This is the `openshell` side of the platform.
+[`hypershell-gateways.md`](./hypershell-gateways.md) covers the other half —
+creating the gateway itself, access grants and service accounts, via `hsctl`.
+Do that first: this runbook assumes a gateway exists and a service account for
+it has been minted.
 
 Nothing here is reconciled. OpenShell providers are not a HyperShell Kind, so
 they cannot live in `.hypershell/`; the profile YAML in `provider-profiles/` is

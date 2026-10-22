@@ -77,14 +77,15 @@ particular `Repository`, `ManagedCluster`, `Role` and `RoleBinding` are
 skipped without an error — `Repository` specifically to prevent recursive
 self-registration.
 
-That silence is why configuration which cannot be imported lives in
-`hack/hypershell/` instead, applied by hand:
+That silence is why configuration which cannot be imported is applied by hand
+instead, following the runbooks in `docs/`:
 
 | Concern | Where | Why |
 | --- | --- | --- |
 | Gateway | here | importable |
-| Access grants (owner/admin/user) | `hack/hypershell/` | `RoleBinding` is not importable |
-| Service accounts | `hack/hypershell/` | not a declarative Kind at all; the client secret is returned once |
+| Access grants (owner/admin/user) | `docs/hypershell-gateways.md` | `RoleBinding` is not importable |
+| Service accounts | `docs/hypershell-gateways.md` | not a declarative Kind at all; the client secret is returned once |
+| Credential providers | `docs/hypershell-providers.md` | an OpenShell concept, not a HyperShell Kind |
 | Repository registration | MCS-224 | not importable; needs `platform:admin`, REST only |
 
 ## Validation
