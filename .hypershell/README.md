@@ -27,7 +27,7 @@ ignored by the import and **rejected outright** by `hsctl apply`:
 ```
 
 The same applies to any unrecognised key under `spec`. Describe resources in
-YAML comments, not in `metadata`. `make hypershell-validate` enforces both.
+YAML comments, not in `metadata`. `make check-hypershell` enforces both.
 
 ## Layout
 
@@ -91,7 +91,7 @@ instead, following the runbooks in `docs/`:
 ## Validation
 
 ```sh
-make hypershell-validate
+make check-hypershell
 ```
 
 This renders every build root and checks that each rendered resource is an

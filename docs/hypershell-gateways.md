@@ -17,7 +17,7 @@ gateway work here is done.
 | --- | --- |
 | [`hypershell-access.yaml`](./hypershell-access.yaml) | The access policy: tiers, service-account roles, expiry. |
 | [`hypershell-providers.md`](./hypershell-providers.md) | Putting provider profiles and providers on a gateway. |
-| `hack/hypershell/validate.py` | Correctness gate for `.hypershell/`. Run via `make hypershell-validate`. |
+| `hack/check_hypershell.py` | Correctness gate for `.hypershell/`. Run via `make check-hypershell`. |
 
 ## Why these steps are manual
 
@@ -103,7 +103,7 @@ instance. Confirm which one you are on before every mutating step.
 ### 2. Create the gateway
 
 ```sh
-make hypershell-validate
+make check-hypershell
 hsctl apply -k .hypershell/overlays/integration
 ```
 

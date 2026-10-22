@@ -11,19 +11,19 @@ SANDBOX_TAG ?= $(shell git rev-parse --short=7 HEAD)
 SANDBOX_CONTAINERFILE := Containerfile
 SANDBOX_CONTEXT := .
 
-.PHONY: lint markdown-lint check-placeholders lint-sandbox hypershell-validate test test-hack sandbox-build sandbox-push require-sandbox-image
+.PHONY: lint markdown-lint check-placeholders lint-sandbox check-hypershell test test-hack sandbox-build sandbox-push require-sandbox-image
 
 # Parent lint target: runs every linter. The OpenShift CI `ci/prow/lint`
 # presubmit runs `make lint`. Add new linters (shell, yaml, ...) as their own
 # targets and list them as prerequisites here.
 #
-# hypershell-validate needs kustomize and PyYAML, which the `ci/prow/lint`
+# check-hypershell needs kustomize and PyYAML, which the `ci/prow/lint`
 # build root provides. That build root is a dockerfile_literal in
 # openshift/release, NOT a Dockerfile in this repo:
 #   ci-operator/config/openshift-online/rosa-agent/
 #     openshift-online-rosa-agent-main.yaml
 # Adding a tool this target depends on means editing that file too.
-lint: markdown-lint check-placeholders lint-sandbox hypershell-validate
+lint: markdown-lint check-placeholders lint-sandbox check-hypershell
 
 # Validate the .hypershell/ Kustomize tree: every build root renders, every
 # rendered resource is an importable Kind with a metadata.name, and each
@@ -34,8 +34,8 @@ lint: markdown-lint check-placeholders lint-sandbox hypershell-validate
 # ever writes Repository.status, so a broken tree looks identical to a
 # working one from outside. `hsctl apply -k --dry-run` is not a substitute:
 # it prints kind and name only and validates nothing server-side.
-hypershell-validate:
-	python3 hack/hypershell/validate.py
+check-hypershell:
+	python3 hack/check_hypershell.py
 
 # Lint all Markdown docs. Requires markdownlint-cli2 (npm i -g markdownlint-cli2).
 # Rules live in .markdownlint-cli2.yaml.

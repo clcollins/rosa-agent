@@ -37,7 +37,7 @@ except ImportError:
         "  venv:        python3 -m pip install pyyaml"
     )
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 HYPERSHELL_DIR = REPO_ROOT / ".hypershell"
 
 # The seven Kinds the RepositoryReconciler will actually import.

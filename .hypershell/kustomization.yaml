@@ -10,6 +10,6 @@ kind: Kustomization
 # Repository import_path targets an overlay under overlays/.
 #
 # It exists so `kustomize build .hypershell/` is known-good, and
-# hack/hypershell/validate.py asserts the name it renders so this stays true.
+# hack/check_hypershell.py asserts the name it renders so this stays true.
 resources:
   - base/platform

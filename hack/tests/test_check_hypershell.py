@@ -1,7 +1,7 @@
-"""Tests for hack/hypershell/validate.py.
+"""Tests for hack/check_hypershell.py.
 
 These cover the pure checks only. Rendering is left out deliberately: it
-shells out to kustomize, and `make hypershell-validate` already exercises
+shells out to kustomize, and `make check-hypershell` already exercises
 that path against the real tree on every lint run.
 
 Each case here corresponds to a way the live API rejects, or silently
@@ -13,7 +13,7 @@ import contextlib
 import io
 import unittest
 
-from hypershell.validate import (
+from check_hypershell import (
     Findings,
     check_gateway,
     check_gateway_name,
