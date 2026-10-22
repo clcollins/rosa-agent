@@ -83,9 +83,9 @@ That silence is why configuration which cannot be imported lives in
 | Concern | Where | Why |
 | --- | --- | --- |
 | Gateway | here | importable |
-| Repository registration | `hack/hypershell/` | not importable; needs `platform:admin`, REST only |
 | Access grants (owner/admin/user) | `hack/hypershell/` | `RoleBinding` is not importable |
 | Service accounts | `hack/hypershell/` | not a declarative Kind at all; the client secret is returned once |
+| Repository registration | MCS-224 | not importable; needs `platform:admin`, REST only |
 
 ## Validation
 

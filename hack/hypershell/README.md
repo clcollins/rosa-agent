@@ -171,6 +171,9 @@ hsctl create serviceAccount --gateway-id "$GATEWAY_ID" \
   --output-file ./<name>.json
 ```
 
+The client secret is in that file and is **shown once**. Move it into the
+secret store, then delete the file. Do not commit it.
+
 To change the role of an existing service account, revoke and recreate it —
 the role is immutable and this rotates the client secret:
 
@@ -193,13 +196,6 @@ hsctl list serviceAccounts --gateway-id "$GATEWAY_ID"
 Stale accounts are not free, either: creation is bounded by both a
 per-creator and a per-gateway active quota, so abandoned entries eventually
 block new ones.
-
-The client secret is in that file and is **shown once**. Move it into the
-secret store, then delete the file. Do not commit it.
-
-```sh
-hsctl list serviceAccounts --gateway-id "$GATEWAY_ID"
-```
 
 ### 6. Repeat per environment
 
