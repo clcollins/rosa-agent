@@ -109,13 +109,28 @@ The default columns omit the name, phase and status even though the API
 returns all three:
 
 ```sh
-hsctl list gateways --columns "id, name, phase, status, cluster_id"
+hsctl list gateways --columns "id, name, phase, status, route_address, cluster_id"
 ```
 
 A populated `CLUSTER ID` means placement resolved and the control plane is
 provisioning. An empty one means the gateway is awaiting placement because no
 cluster advertises both `provider/ibm` and `network/public` — recoverable, it
 binds when a matching cluster appears.
+
+**`Running` / `Healthy` does not mean reachable.** It means the workload is
+healthy. A gateway with no `route` provisions, reports Running, and has no
+endpoint at all. Check `route_address` is populated, not just the phase. If it
+is empty on a gateway whose manifest sets `route`, the control plane's
+exposure resolver may not be configured on that instance — the address is
+published only when both a route is declared and a resolver exists.
+
+For the OIDC values the `openshell` CLI and the CronJobs need:
+
+```sh
+hsctl list gateways --output json | jq '.items[] | {name, route_address, oidc}'
+```
+
+`oidc` is a JSON-encoded string carrying the issuer, client ID and audience.
 
 Export the ID for the remaining steps:
 
@@ -191,3 +206,50 @@ hsctl list serviceAccounts --gateway-id "$GATEWAY_ID"
 Steps 1–5 are identical for staging (hyp1) and prod (hyp2), changing only the
 login URL and the overlay. Each instance has its own database, so each gets
 its own gateway, its own grants and its own service account.
+
+## Replacing a gateway on a new version
+
+**Gateways are not upgradeable in place.** A new OpenShell release means
+deleting and recreating every gateway, so treat this as a routine operation
+rather than an incident.
+
+Nothing gateway-scoped survives. Access grants are `RoleBinding`s carrying a
+`gateway_id`, and service accounts are a gateway-nested sub-resource, so both
+die with the gateway — and the replacement service account gets a **new client
+secret and a new subject**. Anything holding the old credential breaks at the
+moment of deletion, so plan the window rather than discovering it.
+
+Order, per instance:
+
+1. Note the current `route_address` and `oidc` — consumers will need the new
+   values to compare against.
+2. Delete the gateway. This cascades: namespace, workload, grants, service
+   accounts.
+3. Re-run steps 2–5 of the runbook above: apply the overlay, find the new ID,
+   re-grant every entry in [`access.yaml`](./access.yaml), re-mint the service
+   account.
+4. Write the new client secret to the secret store, replacing the old one.
+5. Repoint consumers at the new `route_address` and OIDC values.
+
+Version is **observed, not declared**: `gateway_version` is polled from the
+running gateway and written back by the control plane, and
+`provisioning_version` is derived from the cluster's `gateway-version`
+capability. So a manifest cannot by itself request a version.
+
+What a manifest *can* do is constrain placement to a cluster advertising a
+given version, by adding a selector label:
+
+```yaml
+placement:
+  selector:
+    - provider/ibm
+    - network/public
+    - gateway-version/v0.1.5-rhaiv.0
+```
+
+The `gateway-version` namespace relaxes the usual DNS-label rule to allow the
+dotted release tag. Because placement is create-only, a version pin and the
+delete-and-recreate cycle fit together: the selector records which version the
+gateway was built for, and changing it requires the recreate that was needed
+anyway. The cost is that the gateway will not place at all if no cluster
+advertises that exact version, so pin only when that is the intent.

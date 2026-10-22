@@ -17,6 +17,7 @@ from hypershell.validate import (
     Findings,
     check_gateway,
     check_gateway_name,
+    check_json_string_fields,
     check_resource,
     check_spec_fields,
 )
@@ -24,7 +25,10 @@ from hypershell.validate import (
 
 def gateway(**spec):
     """A minimal valid Gateway, overridable per test."""
-    base = {"placement": {"selector": ["provider/ibm", "network/public"]}}
+    base = {
+        "placement": {"selector": ["provider/ibm", "network/public"]},
+        "route": '{"enabled": true}',
+    }
     base.update(spec)
     return {
         "apiVersion": "hypershell.redhat.io/v1",
@@ -166,6 +170,71 @@ class TestCheckGateway(unittest.TestCase):
         self.assertTrue(any("list of strings" in e for e in findings.errors))
 
 
+class TestRouteRequirement(unittest.TestCase):
+    """A gateway with no route provisions, reports Running/Healthy, and is
+    then unreachable. Nothing in the platform surfaces that as an error, so
+    this check is the only thing standing between a clean apply and a gateway
+    nobody can connect to."""
+
+    def test_rejects_a_gateway_with_no_route(self):
+        doc = gateway()
+        del doc["spec"]["route"]
+        findings = Findings()
+        check_gateway("root", doc, findings)
+        self.assertTrue(any("no route" in e for e in findings.errors))
+
+    def test_accepts_an_enabled_route(self):
+        findings = Findings()
+        check_gateway("root", gateway(route='{"enabled": true}'), findings)
+        self.assertEqual(findings.errors, [])
+
+    def test_accepts_an_empty_route_object(self):
+        # A non-empty route object defaults to enabled server-side.
+        findings = Findings()
+        check_gateway("root", gateway(route="{}"), findings)
+        self.assertEqual(findings.errors, [])
+
+
+class TestJSONStringFields(unittest.TestCase):
+    """route, oidc and credential_driver are JSON-encoded strings. A YAML
+    mapping in those positions renders fine and is then silently dropped,
+    because the import writer reads them with specString."""
+
+    def test_accepts_a_json_string(self):
+        findings = Findings()
+        check_json_string_fields("root", "Gateway", gateway(), findings)
+        self.assertEqual(findings.errors, [])
+
+    def test_rejects_a_mapping_where_a_json_string_is_required(self):
+        findings = Findings()
+        check_json_string_fields(
+            "root", "Gateway", gateway(route={"enabled": True}), findings
+        )
+        self.assertTrue(any("must be a JSON-encoded string" in e for e in findings.errors))
+
+    def test_rejects_malformed_json(self):
+        findings = Findings()
+        check_json_string_fields(
+            "root", "Gateway", gateway(route='{"enabled": tru}'), findings
+        )
+        self.assertTrue(any("not valid JSON" in e for e in findings.errors))
+
+    def test_checks_oidc_too(self):
+        findings = Findings()
+        check_json_string_fields("root", "Gateway", gateway(oidc={"issuer": "x"}), findings)
+        self.assertTrue(any("spec.oidc" in e for e in findings.errors))
+
+    def test_ignores_absent_fields(self):
+        findings = Findings()
+        check_json_string_fields("root", "Gateway", gateway(), findings)
+        self.assertEqual(findings.errors, [])
+
+    def test_ignores_kinds_with_no_json_string_fields(self):
+        findings = Findings()
+        check_json_string_fields("root", "AgentRuntime", {"spec": {"cron": "* * * * *"}}, findings)
+        self.assertEqual(findings.errors, [])
+
+
 class TestCapabilityLabels(unittest.TestCase):
     def test_rejects_unknown_namespace(self):
         # The server validates against a closed namespace set.
@@ -183,15 +252,59 @@ class TestCapabilityLabels(unittest.TestCase):
         check_gateway("root", gateway(placement={"selector": ["provider/"]}), findings)
         self.assertTrue(any("empty value" in e for e in findings.errors))
 
-    def test_rejects_duplicate_namespace(self):
-        # The server accepts only one value per namespace.
+    def test_rejects_repeated_single_value_namespace(self):
+        # provider, region, environment and gateway-version are single-valued.
         findings = Findings()
         check_gateway(
             "root",
             gateway(placement={"selector": ["provider/ibm", "provider/aws"]}),
             findings,
         )
-        self.assertTrue(any("more than once" in e for e in findings.errors))
+        self.assertTrue(any("only one value" in e for e in findings.errors))
+
+    def test_allows_repeated_multi_value_namespace(self):
+        # network and runtime are NOT single-valued; rejecting repeats here
+        # would block a legal selector.
+        findings = Findings()
+        check_gateway(
+            "root",
+            gateway(placement={"selector": ["network/public", "network/internal"]}),
+            findings,
+        )
+        self.assertEqual(findings.errors, [])
+
+    def test_rejects_an_exact_duplicate_label(self):
+        findings = Findings()
+        check_gateway(
+            "root",
+            gateway(placement={"selector": ["network/public", "network/public"]}),
+            findings,
+        )
+        self.assertTrue(any("duplicate" in e for e in findings.errors))
+
+    def test_accepts_a_dotted_gateway_version(self):
+        # gateway-version relaxes the DNS-label rule for release tags.
+        findings = Findings()
+        check_gateway(
+            "root",
+            gateway(placement={"selector": ["gateway-version/v0.1.5-rhaiv.0"]}),
+            findings,
+        )
+        self.assertEqual(findings.errors, [])
+
+    def test_rejects_dots_in_other_namespaces(self):
+        findings = Findings()
+        check_gateway(
+            "root", gateway(placement={"selector": ["provider/ibm.cloud"]}), findings
+        )
+        self.assertTrue(any("is invalid for namespace" in e for e in findings.errors))
+
+    def test_rejects_uppercase_values(self):
+        findings = Findings()
+        check_gateway(
+            "root", gateway(placement={"selector": ["provider/IBM"]}), findings
+        )
+        self.assertTrue(any("is invalid for namespace" in e for e in findings.errors))
 
     def test_accepts_every_valid_namespace(self):
         selector = [

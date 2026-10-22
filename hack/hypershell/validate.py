@@ -22,6 +22,8 @@ So everything that can be checked offline is checked here.
 
 from __future__ import annotations
 
+import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -190,9 +192,50 @@ def check_resource(rel_path: str, doc: dict, index: int, findings: Findings) -> 
         )
 
     check_spec_fields(where, kind, doc, findings)
+    check_json_string_fields(where, kind, doc, findings)
 
     if kind == "Gateway":
         check_gateway(where, doc, findings)
+
+
+# Spec fields the API stores as a JSON-encoded string rather than a nested
+# object. Source: the field comments on the *CreateRequest models in
+# components/api-server/pkg/api/openapi/.
+#
+# These are the easiest field type to get wrong, because YAML makes the wrong
+# form look right: writing a mapping produces valid YAML that renders fine and
+# is then silently dropped, since the import writer reads them with
+# specString and a non-string fails the type assertion. The resource is
+# created without the field and nothing reports it.
+JSON_STRING_FIELDS = {
+    "Gateway": ("oidc", "route", "credential_driver"),
+    "ProviderSpec": ("capability", "profile"),
+    "SecretSource": ("key_mappings",),
+}
+
+
+def check_json_string_fields(where: str, kind: str, doc: dict, findings: Findings) -> None:
+    spec = doc.get("spec") or {}
+    if not isinstance(spec, dict):
+        return
+    for field in JSON_STRING_FIELDS.get(kind, ()):
+        if field not in spec:
+            continue
+        value = spec[field]
+        if not isinstance(value, str):
+            findings.error(
+                where,
+                f"{kind} spec.{field} must be a JSON-encoded string, not a "
+                f"{type(value).__name__}. A mapping here renders fine and is "
+                f"then silently dropped.",
+            )
+            continue
+        try:
+            json.loads(value)
+        except json.JSONDecodeError as exc:
+            findings.error(
+                where, f"{kind} spec.{field} is not valid JSON: {exc}"
+            )
 
 
 def check_spec_fields(where: str, kind: str, doc: dict, findings: Findings) -> None:
@@ -229,6 +272,19 @@ def check_gateway(where: str, doc: dict, findings: Findings) -> None:
             where,
             "Gateway declares cluster_id; use placement selectors instead so "
             "the control plane binds a matching cluster (MCS-223 AC3).",
+        )
+
+    # A gateway with no route provisions and reports Running/Healthy, and is
+    # then unreachable: isRoutedGateway short-circuits on a nil route, so the
+    # control plane never resolves an address and route_address and
+    # console_address stay empty. Nothing surfaces this as an error, which is
+    # exactly why it is checked here.
+    if "route" not in spec:
+        findings.error(
+            where,
+            "Gateway declares no route; it will provision and report "
+            "Running/Healthy but publish no route_address and have no "
+            "reachable endpoint. Set route: '{\"enabled\": true}'.",
         )
 
     placement = spec.get("placement")
@@ -297,22 +353,40 @@ KIND_SPEC_FIELDS = {
 }
 
 # Capability labels are validated server-side against a closed set of
-# namespaces, one value per namespace.
-# Source: components/api-server/plugins/managedClusters/service.go
+# namespaces. Source: components/api-server/plugins/managedClusters/service.go
 CAPABILITY_NAMESPACES = frozenset(
     {"provider", "network", "region", "runtime", "environment", "gateway-version"}
 )
 
+# Only these accept a single value. network and runtime may legitimately carry
+# several, so rejecting every repeat would block a valid selector.
+SINGLE_VALUE_NAMESPACES = frozenset(
+    {"provider", "region", "environment", "gateway-version"}
+)
+
+# Values are DNS-label strict, with one exception: gateway-version carries a
+# dotted, suffixed release tag (v0.1.5-rhaiv.0), so it accepts dots and is
+# bounded by length instead.
+CAPABILITY_VALUE_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+GATEWAY_VERSION_VALUE_RE = re.compile(r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$")
+GATEWAY_VERSION_VALUE_MAX_LEN = 128
+
 
 def check_capability_labels(where: str, selector: list[str], findings: Findings) -> None:
-    seen: set[str] = set()
+    seen_labels: set[str] = set()
+    seen_namespaces: set[str] = set()
     for label in selector:
+        if label in seen_labels:
+            findings.error(where, f"duplicate capability label {label!r}")
+        seen_labels.add(label)
+
         if label.count("/") != 1:
             findings.error(
                 where, f"capability label {label!r} is not in namespace/value form"
             )
             continue
         namespace, value = label.split("/", 1)
+
         if namespace not in CAPABILITY_NAMESPACES:
             findings.error(
                 where,
@@ -321,13 +395,29 @@ def check_capability_labels(where: str, selector: list[str], findings: Findings)
             )
         if not value:
             findings.error(where, f"capability label {label!r} has an empty value")
-        if namespace in seen:
+        elif not capability_value_valid(namespace, value):
             findings.error(
                 where,
-                f"capability namespace {namespace!r} appears more than once; "
-                f"the server accepts only one value per namespace",
+                f"capability value {value!r} is invalid for namespace "
+                f"{namespace!r}; values are lowercase DNS labels, except "
+                f"gateway-version which also accepts dots.",
             )
-        seen.add(namespace)
+
+        if namespace in SINGLE_VALUE_NAMESPACES and namespace in seen_namespaces:
+            findings.error(
+                where,
+                f"capability namespace {namespace!r} accepts only one value",
+            )
+        seen_namespaces.add(namespace)
+
+
+def capability_value_valid(namespace: str, value: str) -> bool:
+    if namespace == "gateway-version":
+        return (
+            len(value) <= GATEWAY_VERSION_VALUE_MAX_LEN
+            and GATEWAY_VERSION_VALUE_RE.match(value) is not None
+        )
+    return CAPABILITY_VALUE_RE.match(value) is not None
 
 
 def check_gateway_name(rel_path: str, docs: list[dict], findings: Findings) -> None:

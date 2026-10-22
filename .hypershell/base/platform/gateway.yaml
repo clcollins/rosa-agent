@@ -34,3 +34,14 @@ spec:
       - network/public
   # Edge termination. The gateway is never declared insecure here.
   tls_mode: edge
+  # External exposure. Without this the gateway still provisions and reports
+  # Running/Healthy, but it is unreachable: `isRoutedGateway` short-circuits on
+  # a nil route, so the control plane never resolves an address and
+  # route_address/console_address stay empty. Running means the workload is
+  # healthy, not that anyone can connect to it.
+  #
+  # This is a JSON-encoded STRING, not a nested mapping. The import writer
+  # reads it with specString, so a YAML mapping here is silently dropped.
+  # RouteConfig is {host, enabled}; a non-empty object defaults to enabled, so
+  # '{}' would also work, but the explicit form documents intent.
+  route: '{"enabled": true}'
