@@ -1,5 +1,18 @@
 # Custom OpenShell provider profile: PagerDuty
 #
+# Status: this profile is imported on the gateways, but there is deliberately
+# NO central PagerDuty provider. Nothing in the scheduled work attaches
+# PagerDuty -- no sandbox template lists it, and policies/default.yaml omits
+# PagerDuty egress precisely so this profile composes its own narrower rules
+# instead of a coarse policy block union-ing over them.
+#
+# The profile is imported anyway because a provider can only be created
+# against a profile that exists on the gateway (`provider create --type
+# pagerduty`). Importing it makes the capability available so anyone working
+# on the gateway can create a PagerDuty provider bound to their own
+# credential, without a shared one existing. A profile on its own carries no
+# credential and grants nothing.
+#
 # Scope:
 #   Read  — incidents (list + by id), the incident activity/audit trail
 #           (log entries), and per-incident alerts (list + single alert by
