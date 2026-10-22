@@ -25,8 +25,8 @@
 #   (see step 4 below for details). `lint` only checks schema shape, not
 #   scope content, so it will pass with the placeholder still in place - but
 #   every OAuth token request will then fail once imported.
-#   openshell provider profile lint -f provider-profiles/pagerduty.yaml
-#   openshell provider profile import -f provider-profiles/pagerduty.yaml
+#   openshell -g <gateway> profile lint   --file provider-profiles/pagerduty.yaml
+#   openshell -g <gateway> profile import --file provider-profiles/pagerduty.yaml --global
 #
 # Authorization: PagerDuty's REST API v2 has no scheme the sandbox proxy can
 # rewrite from a plain env-var placeholder. It only accepts

@@ -15,14 +15,18 @@
 #   with a catch-all, since that's where real damage is possible.
 #
 # Import:
-#   openshell provider profile lint -f atlassian-jira-profile.yaml
-#   openshell provider profile import -f atlassian-jira-profile.yaml
+#   openshell -g <gateway> profile lint   --file provider-profiles/atlassian-jira.yaml
+#   openshell -g <gateway> profile import --file provider-profiles/atlassian-jira.yaml --global
 #
 # Create the provider. JIRA_API_TOKEN is the only real secret this profile
 # manages — it becomes an opaque, proxy-resolved placeholder inside the
 # sandbox (openshell:resolve:env :*), never a plaintext value:
-#   openshell provider create --name work-jira --type atlassian-jira \
-#       --credential JIRA_API_TOKEN
+#   openshell -g <gateway> provider create --name rosa-agent-jira \
+#       --type atlassian-jira --global-profile --credential JIRA_API_TOKEN
+#
+# --global-profile is required when the profile was imported with --global.
+# Passing --credential with a bare KEY reads the value from the environment,
+# so the token never reaches a command line or shell history.
 #
 # JIRA_EMAIL and JIRA_BASE_URL are NOT secrets, and they are NOT handled by
 # this profile or by `provider create --config`. Custom profiles have no

@@ -18,16 +18,20 @@
 #      forwarding it as text leaks nothing.
 #
 # Import (one-time per new gateway; lint first to catch format issues):
-#   openshell provider profile lint -f provider-profiles/google-vertex-ai.yaml
-#   openshell provider profile import -f provider-profiles/google-vertex-ai.yaml
+#   openshell -g <gateway> profile lint   --file provider-profiles/google-vertex-ai.yaml
+#   openshell -g <gateway> profile import --file provider-profiles/google-vertex-ai.yaml --global
 # To update an existing gateway's profile: export, edit, then
-#   openshell provider profile update (requires fresh resource_version).
+#   openshell -g <gateway> profile update (requires fresh resource_version).
 #
 # Create provider (SA key for production):
-#   openshell provider create --name rosa-agent-vertex --type google-vertex-ai \
+#   openshell -g <gateway> provider create --name rosa-agent-vertex \
+#     --type google-vertex-ai --global-profile \
 #     --credential GOOGLE_VERTEX_AI_SERVICE_ACCOUNT_TOKEN=placeholder \
 #     --config VERTEX_AI_PROJECT_ID=rosa-general \
 #     --config VERTEX_AI_REGION=global
+#
+# --global-profile is required when the profile was imported with --global:
+# without it the CLI looks for a workspace-scoped profile and fails.
 #
 #   env "SA_PRIVATE_KEY=..." \
 #     openshell provider refresh configure rosa-agent-vertex \

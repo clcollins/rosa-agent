@@ -1,0 +1,85 @@
+# GitHub provider profile for rosa-agent sandboxes.
+#
+# Adapted from NVIDIA/OpenShell providers/github.yaml. OpenShell 0.1.x ships no
+# built-in profiles, so without this import there is no `github` provider type
+# and `provider create --type github` fails with "provider profile not found".
+#
+# Two deliberate deltas from upstream:
+#
+#   1. binaries: upstream names /usr/bin/gh, which does not exist here. The
+#      Containerfile installs gh to /usr/local/bin/gh. binaries is the
+#      least-privilege control deciding which processes may reach the
+#      endpoints, and it matches on exact path, so the wrong path silently
+#      denies every connection. /usr/bin/claude is included because Claude
+#      Code itself reaches the GitHub API; policies/default.yaml already lists
+#      it for the same reason.
+#
+#   2. api.github.com is read-write, not upstream's read-only. rosa-agent
+#      creates forks, pull requests, issues and labels through fixed
+#      `gh api -X POST` calls (see sandbox/skills/github-labels/
+#      open-labeled-pr.sh), all of which the read-only preset blocks. This is
+#      not a widening: policies/default.yaml already grants github_api
+#      read-write for the same binaries. The profile now says so explicitly
+#      rather than relying on the baked policy to union over it.
+#
+# github.com keeps upstream's rules: clone and fetch work, push
+# (git-receive-pack) stays denied. rosa-agent's PR flow is REST-only and does
+# not push branches, so widening that has no justification today.
+#
+# Lint and import. `openshell provider profile ...` also works -- it is a
+# registered alias for `openshell profile ...` -- but the short form is the
+# canonical one:
+#   openshell -g <gateway> profile lint   --file provider-profiles/github.yaml
+#   openshell -g <gateway> profile import --file provider-profiles/github.yaml --global
+#
+# Create the provider. The credential is read from the environment so the token
+# never appears in a command line or shell history. Note the vault key: it is
+# github-openshift-org-token, NOT github-token. Both are 93-character
+# fine-grained PATs so nothing distinguishes them by shape, but github-token
+# returns "Bad credentials" while github-openshift-org-token authenticates as
+# the rosa-agent bot.
+#   GH_TOKEN="$(vault kv get -field=github-openshift-org-token osd-sre/rosa-agent)" \
+#     openshell -g <gateway> provider create --name rosa-agent-github \
+#       --type github --global-profile --credential GH_TOKEN
+
+id: github
+display_name: GitHub
+description: GitHub API and Git operations
+category: source_control
+credentials:
+  - name: api_token
+    description: GitHub token
+    env_vars: [GITHUB_TOKEN, GH_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [api_token]
+endpoints:
+  # REST API. read-write because the agent creates forks, PRs, issues and
+  # labels; see the header note.
+  - host: api.github.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+  # GraphQL stays read-only: nothing in this repo issues a GraphQL mutation.
+  - host: api.github.com
+    port: 443
+    path: /graphql
+    protocol: graphql
+    access: read-only
+    enforcement: enforce
+  # Git transport. Smart HTTP needs POST to */git-upload-pack for clone and
+  # fetch, which the read-only preset blocks, so the rules are spelled out.
+  # Push (git-receive-pack) is deliberately absent.
+  - host: github.com
+    port: 443
+    protocol: rest
+    enforcement: enforce
+    rules:
+      - allow: { method: GET, path: "**" }
+      - allow: { method: HEAD, path: "**" }
+      - allow: { method: OPTIONS, path: "**" }
+      - allow: { method: POST, path: "/**/git-upload-pack" }
+binaries: [/usr/local/bin/gh, /usr/bin/git, /usr/bin/claude]
