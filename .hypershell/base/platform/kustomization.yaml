@@ -9,7 +9,6 @@ kind: Kustomization
 # foreign-key fields through verbatim and resolves nothing by name.
 #
 # No Repository manifest lives here. The importer skips that Kind to prevent
-# recursive registration; registration is a separate manual act and its
-# manifests live in hack/hypershell/.
+# recursive registration; registration is a separate manual act (MCS-224).
 resources:
   - gateway.yaml
