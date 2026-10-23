@@ -3,6 +3,7 @@ kind: Sandbox
 metadata:
   name: ${NAME}
 spec:
+  autoProviders: false
   image: quay.io/redhat-services-prod/rosa-tenant/rosa-agent/rosa-agent:latest
   command:
     - claude
@@ -19,4 +20,4 @@ spec:
   sessionOpts:
     approvalMode: auto
     noKeep: true
-  tty: false
+  tty: true
