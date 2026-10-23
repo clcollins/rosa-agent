@@ -422,22 +422,30 @@ and defeat it. So "add it to the policy" is not a safe default fix.
 
 ### The opposite failure: a rule that should deny, and does not
 
-Every endpoint block must set `enforcement: enforce` explicitly. The parser
-matches that one exact string and falls back to `audit` for everything else:
+Every endpoint block must set `enforcement: enforce` explicitly. Omitted or
+empty parses as `audit`, which **allows the traffic** and merely logs the
+violation. The default is therefore fail-open, and it is not an error:
 
-```rust
-Some("enforce") => EnforcementMode::Enforce,
-_               => EnforcementMode::Audit,
+```sh
+openshell -g <registration> profile lint --from <dir>
+# -> Provider profile lint passed.
 ```
 
-Audit **allows the traffic** and merely logs the violation. So the default is
-fail-open, and it is reached by omitting the field, leaving it empty, or
-miscasing it as `Enforce`. None of those are errors at lint or import time.
+A misspelled value is a different case and is safe — validation rejects
+anything outside the exact set before the parse runs:
 
-The symptom is a request you believe is denied succeeding anyway. A policy
-reviewed only by reading the YAML will look correct. Treat any block without a
-literal `enforcement: enforce` as permitting whatever it describes, and prove
-denials by exercising them rather than by inspection.
+```text
+error ... unknown enforcement value (expected enforce or audit)
+```
+
+So the trap is narrow but real: a block that simply *omits* `enforcement`
+passes every check and silently permits what it appears to restrict. The
+symptom is a request you believe is denied succeeding anyway, and a policy
+reviewed by reading the YAML will look correct.
+
+Treat any block without a literal `enforcement: enforce` as permitting
+whatever it describes, and prove denials by exercising them rather than by
+inspection.
 
 Relatedly, `access: read-write` does not mean every verb. For REST it expands
 to exactly `GET`, `HEAD`, `OPTIONS`, `POST`, `PUT`, `PATCH` — **`DELETE` is
