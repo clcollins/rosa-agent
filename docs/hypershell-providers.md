@@ -283,6 +283,78 @@ openshell -g <registration> provider refresh rotate <provider-name> \
 
 The placeholder credential at create time is replaced by the first rotation.
 
+## Rotating a credential under a running sandbox
+
+Rebinding a provider does **not** change already-running processes. The
+credential is installed into the sandbox's *launch* environment, so only
+processes started afterwards pick it up. `provider update --wait` says as much:
+it waits until the sandbox applies credentials, policy and environment "for new
+processes".
+
+This is worth understanding before you hit it, because every signal says
+healthy while a workload keeps failing:
+
+```sh
+openshell -g <registration> sandbox provider status <sandbox> <provider> --output json
+```
+
+reports `credentials_installed: true`, `policy_active: true` and `observed`
+matching `desired`. All of that is accurate — the *sandbox* has the new
+credential. A process that started before the rotation still does not.
+
+### Telling which credential a process holds
+
+You cannot read the credential, and neither can the workload. What
+`provider update` installs in the environment is an opaque handle, not the
+secret; the supervisor proxy exchanges it for the real value per request. So
+nothing inside the sandbox reveals which version it is holding, and any
+conclusion a workload draws about "its token" is inference from a status code.
+
+The handle tracks the credential **version**, not the sandbox, so its digest is
+comparable across sandboxes on the same gateway. Compare digests rather than
+values:
+
+```sh
+printf %s "$<CREDENTIAL_KEY>" | sha256sum | cut -c1-16
+```
+
+Run it in a fresh `sandbox exec` to get the current version, then in the
+affected session. Matching digests mean the session is current and the fault
+lies elsewhere. Differing digests mean the session is stale.
+
+### Fixing it
+
+Start a **new session** and launch the workload there:
+
+```sh
+openshell -g <registration> sandbox connect <sandbox>
+```
+
+Restarting the process inside its existing shell does not work — a child
+inherits its parent's environment, so it picks up the same stale handle and
+reproduces the identical failure. If a new session still shows the old digest,
+the entrypoint is replaying a captured value; `sandbox stop` followed by
+`sandbox start` preserves the workspace and relaunches everything against the
+current environment. Deleting and recreating the sandbox is the last resort.
+
+### Do not bake the handle into config
+
+A push that fails before `gh auth setup-git` has run invites the workaround of
+writing the credential into a git remote URL. Avoid it. The value embedded is
+only the handle, so this is not a secret-disclosure problem — but the handle is
+version-pinned, and writing it into `.git/config` freezes one credential
+version into repo state.
+
+At the next rotation that remote keeps presenting a stale handle, pushes start
+failing with upstream 403s, and the usual fix no longer helps: a new session
+cannot clear it, because the stale value is in the repository rather than the
+environment. Use the credential helper instead, which resolves the handle from
+the live environment on every request and therefore follows rotations:
+
+```sh
+gh auth setup-git
+```
+
 ## Validating
 
 Creating a provider proves nothing about whether its credential works. Run a
