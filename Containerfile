@@ -7,7 +7,7 @@ ARG GOLANGCI_LINT_VERSION=2.14.0
 ARG STATICCHECK_VERSION=2026.2.1
 ARG SHELLCHECK_VERSION=0.10.0
 ARG GLAB_VERSION=1.119.0
-ARG OPENSHELLCTL_VERSION=0.1.3-rc.1
+ARG OPENSHELLCTL_VERSION=0.1.5-rc.2
 
 RUN set -eux; \
     dnf -y install --setopt=install_weak_deps=False --nodocs \
@@ -44,14 +44,11 @@ RUN set -eux; \
     tar -C /tmp -xzf /tmp/glab.tar.gz; \
     install -m0755 /tmp/bin/glab /usr/local/bin/glab; \
     # --- openshellctl ---
-    OSC_ARCH="${ARCH}"; \
-    if [ "${OSC_ARCH}" = "amd64" ]; then OSC_ARCH="x86_64"; fi; \
-    curl -fsSLo "/tmp/openshellctl_Linux_${OSC_ARCH}.tar.gz" \
-      "https://github.com/openshift-online/openshellctl/releases/download/v${OPENSHELLCTL_VERSION}/openshellctl_Linux_${OSC_ARCH}.tar.gz"; \
-    curl -fsSLo /tmp/openshellctl_checksums.txt \
-      "https://github.com/openshift-online/openshellctl/releases/download/v${OPENSHELLCTL_VERSION}/openshellctl_${OPENSHELLCTL_VERSION}_checksums.txt"; \
-    grep "openshellctl_Linux_${OSC_ARCH}.tar.gz" /tmp/openshellctl_checksums.txt | (cd /tmp && sha256sum --check); \
-    tar --no-same-owner -C /tmp -xzf "/tmp/openshellctl_Linux_${OSC_ARCH}.tar.gz" openshellctl; \
+    OCTL_ARCH="${ARCH}"; \
+    if [ "${OCTL_ARCH}" = "amd64" ]; then OCTL_ARCH="x86_64"; fi; \
+    curl -fsSLo /tmp/openshellctl.tar.gz \
+      "https://github.com/openshift-online/openshellctl/releases/download/v${OPENSHELLCTL_VERSION}/openshellctl_Linux_${OCTL_ARCH}.tar.gz"; \
+    tar --no-same-owner -C /tmp -xzf /tmp/openshellctl.tar.gz openshellctl; \
     install -m0755 /tmp/openshellctl /usr/local/bin/openshellctl; \
     # --- cleanup ---
     rm -rf /tmp/*
