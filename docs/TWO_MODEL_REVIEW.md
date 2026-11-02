@@ -17,6 +17,7 @@ This mirrors the workflow where a human shares an external model's review, and w
 ### Why Fable for Code Review?
 
 Fable is designed to be more analytical and critical, making it ideal for code review:
+
 - More thorough at finding edge cases and correctness issues
 - Better at identifying subtle logic errors
 - Provides detailed, structured feedback
@@ -121,6 +122,7 @@ Check the agent's behavior to confirm it's using a different model than the defa
 ### 4. Cost Implications
 
 Understand the cost impact:
+
 - Sonnet 4.5: implementation + remediation + security reviews
 - Fable (or Opus/Haiku): one code review pass per ticket
 
@@ -139,15 +141,18 @@ Most of the additional cost is input tokens, which are cheaper than output token
 1. Create a test Jira ticket labeled `PMR-AI-PILOT`, assigned to `rosa-agent`
 2. Make it a simple, safe change (e.g., update a README)
 3. Invoke manually:
+
    ```bash
    /pmr-action-item ROSAENG-XXXXX
    ```
+
 4. Observe the new steps 7-9 in the output
 5. Verify the PR includes both the original implementation AND the code review fixes
 
 ### Verify Multi-Model Usage
 
 Check the logs/output to confirm:
+
 - Step 5 uses Sonnet (implementation)
 - Step 7 spawns code-reviewer agent with Fable (code review)
 - Step 8 uses Sonnet (implement findings)

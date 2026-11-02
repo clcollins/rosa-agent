@@ -20,6 +20,7 @@ This skill is part of the PMR action pipeline (MCS-46):
 7. **Review Gate** → PR review before merge
 
 **This skill's job:** Given a complete brief, output either:
+
 - A structured remediation proposal (failure mechanism + proposed change + verification), OR
 - An explicit decline with specific reason why no sound proposal can be made
 
@@ -93,6 +94,7 @@ AGENT_ACCOUNT_ID=$(echo "$MYSELF" | python3 -I -c "import sys,json; print(json.l
 ### Step D2: Query for Unprocessed pmr-ai Tickets
 
 Find tickets that:
+
 - Have the `pmr-ai` label
 - Are assigned to rosa-agent (this agent)
 - Do NOT yet have the `pmr-ai-ready` label (not yet through analysis)
@@ -202,6 +204,7 @@ jira -H "Content-Type: application/json" \
 ```
 
 **ADF listItem node for each missing element:**
+
 ```json
 {
   "type": "listItem",
@@ -217,6 +220,7 @@ jira -H "Content-Type: application/json" \
 ```
 
 **Missing element descriptions** (use only the ones that are actually missing):
+
 - `"Action description: what specifically needs to be fixed, and why"`
 - `"Incident evidence: timeline of events, impact scope, symptoms observed"`
 - `"Affected component/repository: the GitHub owner/repo and service/controller name"`
@@ -237,18 +241,21 @@ remaining count in your final summary output.
 ### Step 1: Load and Validate Brief
 
 **Accept brief via:**
+
 - Direct text paste of brief content
 - Jira issue key (fetch using `jira` skill per AGENTS.md)
 - File path to brief document
 - Google Doc URL (if MCP available)
 
 **Validate completeness:**
+
 - ✅ Action description (what needs fixing)
 - ✅ Incident evidence (timeline, impact, symptoms)
 - ✅ Affected component/repository
 - ✅ Failure context (what went wrong, when)
 
 **If incomplete:**
+
 ```markdown
 ⚠️ Brief Incomplete - Cannot Proceed
 
@@ -263,17 +270,20 @@ Required for sound proposal:
 
 Recommendation: Return to intake (MCS-214) to complete brief.
 ```
+
 **STOP HERE** if incomplete - do not guess.
 
 ### Step 2: Analyze Failure Mechanism
 
 **Extract failure signals:**
+
 - Error messages, stack traces, log patterns
 - Timeline: what changed → what failed → what recovered
 - Impact: user symptoms, scope, duration
 - Environment: load, timing, configuration
 
 **Identify root cause category:**
+
 - Logic bug (incorrect behavior, unhandled edge case)
 - Race condition (timing-dependent)
 - Missing validation (unchecked input/state)
@@ -284,12 +294,14 @@ Recommendation: Return to intake (MCS-214) to complete brief.
 - Observability gap (cannot detect/prevent)
 
 **State failure mechanism** (one clear sentence):
+
 - WHY the incident occurred (not just what failed)
 - Connect symptoms to root cause
 - Must be falsifiable/verifiable
 
 **Example:**
-```
+
+```text
 Failure Mechanism:
 Cluster upgrade timed out because the control plane health check failed 
 to account for StatefulSet rolling-restart delay with OnDelete update 
@@ -301,12 +313,14 @@ strategy, causing abort before pods became ready.
 **DEFAULT TO CODE/ARCHITECTURAL CHANGES** - workarounds need justification (Step 4).
 
 **1. Identify change location:**
+
 - Repository and file paths
 - Function/method/component name
 - Config files if architectural
 - API contracts if cross-service
 
 **2. Specify change type:**
+
 - Code fix (change logic, add validation, fix race)
 - Architectural change (refactor component, change data flow)
 - Configuration change (update defaults, add flag, modify limits)
@@ -315,7 +329,7 @@ strategy, causing abort before pods became ready.
 
 **3. Describe proposed change:**
 
-```
+```text
 Proposed Change:
 
 TYPE: [Code fix / Architectural / Configuration / Observability / Workaround]
@@ -333,7 +347,8 @@ HOW:
 ```
 
 **Example:**
-```
+
+```text
 TYPE: Code fix + Observability
 
 WHAT:
@@ -357,22 +372,26 @@ HOW:
 **A workaround is NOT first choice.** If proposing workaround, you MUST provide:
 
 **1. Why code/architecture change is infeasible:**
+
 - Technical blocker (upstream bug, API limitation)
 - Timeline constraint with evidence (critical incident, customer commitment)
 - Resource constraint (requires N-month refactor, no capacity)
 
 **2. Evidence supporting infeasibility:**
+
 - Link to upstream issue
 - Quote from customer escalation/commitment
 - Architecture complexity estimate
 
 **3. Explicit tradeoffs:**
+
 - What breaks or degrades
 - Technical debt incurred
 - Follow-up action item to address properly
 
 **Example:**
-```
+
+```text
 Workaround Justification:
 
 Proposed: Increase global upgrade timeout 90m → 180m
@@ -403,27 +422,32 @@ Epic for health check refactor targeting Q1 2027
 Specify how to verify fix prevents recurrence:
 
 **1. Unit tests:**
+
 - Conditions to test
 - Expected outcomes
 - Edge cases covered
 
 **2. Integration tests:**
+
 - Scenario to reproduce
 - How to trigger failure condition
 - Success criteria
 
 **3. Observability:**
+
 - Metrics/alerts to watch
 - Log messages to verify
 - Dashboards to update
 
 **4. Canary criteria** (if applicable):
+
 - What to monitor during rollout
 - Rollback triggers
 - Verification timeline
 
 **Example:**
-```
+
+```text
 Verification:
 
 UNIT TESTS:
@@ -455,28 +479,33 @@ CANARY:
 Document:
 
 **1. Brief source:**
+
 - Where brief came from (Jira, doc, manual)
 - When retrieved
 - Brief version if available
 
 **2. Incident evidence used:**
+
 - ITN/incident.io reference
 - WebRCA ID
 - Timeline events or log excerpts cited
 - OHSS ticket if customer-facing
 
 **3. Code/architecture investigation:**
+
 - Repos and commits inspected
 - Files read during analysis
 - Assumptions made
 
 **4. Key decisions:**
+
 - Why this change vs alternatives
 - Why code fix vs workaround (with evidence)
 - Why these files/components vs others
 
 **Example:**
-```
+
+```text
 Provenance:
 
 Brief Source:
@@ -590,6 +619,7 @@ recurrence. Address why this approach vs alternatives.]
 ### Step 8: Tag Jira Issue as Proposal-Ready
 
 After successfully generating a proposal (not a decline), tag the Jira issue with **`pmr-ai-ready`** to signal that:
+
 - Analysis is complete
 - Proposal is ready for human grooming gate
 - Issue is eligible for `pmr-action-item` implementation
@@ -604,6 +634,7 @@ jira -H "Content-Type: application/json" \
 ```
 
 **Do NOT tag if:**
+
 - Proposal was declined (explicit reasoning output)
 - Brief was incomplete (stopped at Step 1)
 - Analysis identified blockers requiring human input
@@ -611,7 +642,7 @@ jira -H "Content-Type: application/json" \
 **Comment on the ticket with proposal link:**
 After tagging, add a comment with a link to where the proposal was saved (Google Doc, Jira comment, file attachment, etc.):
 
-```
+```text
 Proposal analysis complete. See attached proposal document.
 
 Next: Human grooming gate for approval before implementation.
@@ -622,6 +653,7 @@ Next: Human grooming gate for approval before implementation.
 **Use when you cannot propose with confidence.**
 
 **Reasons to decline:**
+
 - Failure mechanism unclear from evidence
 - Multiple plausible root causes, cannot disambiguate
 - Proposed fix would be a guess (not evidence-based)
@@ -691,7 +723,7 @@ Next: Human grooming gate for approval before implementation.
 
 ### Pattern 1: Interactive Use (Human-Driven)
 
-```
+```text
 User: /pmr-remediation-analysis ROSAENG-12345
 
 → Fetch Jira ticket using jira skill
@@ -703,7 +735,7 @@ User: /pmr-remediation-analysis ROSAENG-12345
 
 ### Pattern 2: Triage Scan (Discovery Mode)
 
-```
+```text
 User: /pmr-remediation-analysis (no ticket key)
   — OR —
 Cron: claude --dangerously-skip-permissions \
@@ -719,7 +751,7 @@ Cron: claude --dangerously-skip-permissions \
 
 ### Pattern 3: Pipeline Integration (Automated)
 
-```
+```text
 Intake (MCS-214) → produces brief
 ↓
 Proposal (THIS SKILL) → analyzes brief
@@ -730,6 +762,7 @@ Grooming Gate → human approves/denies
 ```
 
 **Non-interactive note:** If invoked non-interactively (like pmr-action-item skill):
+
 - Never pause for input
 - "Can't determine X" → decline with reason, don't guess
 - Output to stdout for capture by pipeline
@@ -738,7 +771,7 @@ Grooming Gate → human approves/denies
 
 Per `AGENTS.md`, all Jira calls MUST go through the `jira` skill:
 
-```
+```text
 1. Load jira skill: `Skill({skill: "jira"})`
 2. Let it run auth detection
 3. Use its $JB (Jira base URL) and methods
@@ -766,7 +799,7 @@ Per `AGENTS.md`, all Jira calls MUST go through the `jira` skill:
 
 ### Example 1: Successful Proposal
 
-```
+```text
 User: Analyze this PMR brief:
 
 Action: ROSAENG-74825 - Prevent cluster upgrade timeout during StatefulSet restart
@@ -784,7 +817,7 @@ Agent:
 
 ### Example 2: Decline - Unclear Mechanism
 
-```
+```text
 User: Analyze ROSAENG-74826
 
 Agent:
@@ -797,7 +830,7 @@ Agent:
 
 ### Example 3: Decline - Workaround Without Justification
 
-```
+```text
 User: Propose fix for intermittent API timeout
 
 Agent:
@@ -809,7 +842,7 @@ Agent:
 
 ### Example 4: Discovery Mode - Incomplete Ticket
 
-```
+```text
 Agent (no ticket key given, or cron-driven):
 → Queries Jira: labels=pmr-ai, assignee=rosa-agent, not pmr-ai-ready
 → Finds MCS-1434 (no description)

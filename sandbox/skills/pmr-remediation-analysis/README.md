@@ -42,7 +42,8 @@ claude --print "/pmr-remediation-analysis ROSAENG-12345"
 ```
 
 Or paste brief directly:
-```
+
+```text
 Analyze this PMR brief:
 
 Action: ROSAENG-12345 - Fix cluster upgrade timeout
@@ -53,7 +54,7 @@ Affected: cluster-upgrade-controller repo
 
 ### Pipeline Integration (Future)
 
-```
+```text
 Intake → Brief assembled
    ↓
 Proposal → claude --dangerously-skip-permissions \
@@ -121,11 +122,13 @@ HOW: [Implementation approach]
 ## Dependencies
 
 ### Required
+
 - `jira` skill (per AGENTS.md - all Jira calls go through it)
 - Access to GitHub repos for code investigation
 - Access to Jira API (OCM credentials or JBTOKEN)
 
 ### Optional (Enhances)
+
 - WebRCA API access (via OCM `ocm get /api/web-rca/v1/...`)
 - Google Docs MCP (for brief retrieval if doc link)
 - Slack MCP (for timeline evidence)
@@ -159,6 +162,7 @@ brief:
 **Per MCS-208 spec** (in progress):
 
 Captures:
+
 - Brief source (where, when)
 - Incident evidence used (ITN, WebRCA, timeline)
 - Code investigation (repos, files, commits)
@@ -203,6 +207,7 @@ Per ticket definition:
 **Current**: Initial implementation (MCS-216 In Progress)
 
 **Next**:
+
 - Evaluate against real PMR backlog actions
 - Refine based on grooming gate reviewer feedback
 - Integrate with MCS-214 intake output format
@@ -224,11 +229,13 @@ Per ticket definition:
 ## Example Invocations
 
 ### Analyze Jira Ticket
+
 ```bash
 claude --print "/pmr-remediation-analysis ROSAENG-74825"
 ```
 
 ### Analyze Pasted Brief
+
 ```bash
 claude --print "$(cat << 'EOF'
 Analyze this PMR brief:
@@ -254,6 +261,7 @@ EOF
 ```
 
 ### Non-Interactive Pipeline Use
+
 ```bash
 #!/bin/bash
 # Future pipeline integration
@@ -278,6 +286,7 @@ fi
 ### Unit Testing (Manual)
 
 Test decline path:
+
 ```bash
 # Incomplete brief
 claude --print "Analyze PMR: Action ROSAENG-999 Incident ITN-2026-999"
@@ -289,6 +298,7 @@ claude --print "Analyze PMR with conflicting timeline events..."
 ```
 
 Test proposal path:
+
 ```bash
 # Complete brief with clear failure mechanism
 claude --print "/pmr-remediation-analysis ROSAENG-74825"
@@ -304,6 +314,7 @@ claude --print "/pmr-remediation-analysis ROSAENG-74825"
 ## Contributing
 
 Changes to this skill should:
+
 1. Maintain decline-when-uncertain principle
 2. Preserve provenance capture
 3. Enforce code/arch preference over workarounds

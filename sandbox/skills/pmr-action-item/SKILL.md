@@ -14,6 +14,7 @@ ticket end to end. A future enumerator/CronJob could discover every open
 that enumeration is out of scope here.
 
 **The `pmr-ai-ready` label indicates:**
+
 - The ticket has been through the proposal stage (`pmr-remediation-analysis` skill)
 - A structured remediation proposal exists
 - Human grooming gate has approved (or is pending)
@@ -175,6 +176,7 @@ Ask the reviewing agent to critically assess:
    queries
 
 The reviewer must return **structured findings** with:
+
 - **Severity**: CRITICAL (blocks PR), IMPORTANT (should fix), MINOR (nice-to-have)
 - **File and line number**
 - **Specific issue** - not vague ("improve error handling") but concrete
