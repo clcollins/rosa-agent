@@ -97,7 +97,7 @@ Only CRITICAL findings block the PR. IMPORTANT findings should be implemented if
 
 ### 1. Vertex AI Model Access
 
-Verify that the `rosa-general-vertex` provider has access to the required models:
+Verify that the Vertex AI provider (`rosa-agent-vertex`) has access to the required models:
 
 - ✅ `us.anthropic.claude-sonnet-4-5-20250929-v1:0` (current default for implementation)
 - ❓ Fable, Opus, or Haiku (for independent code review)
