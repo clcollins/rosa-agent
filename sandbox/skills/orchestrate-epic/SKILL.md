@@ -170,6 +170,11 @@ The comment uses Jira wiki markup (h2., ||table||, [text|url], (/)).
 
 ### Known Jira limitations
 
+- **Epic Link**: use the v3 `parent` field, NOT the legacy `customfield_12311140`.
+  The old Epic Link field is dead in Atlassian Cloud — PUT with it returns
+  "Field cannot be set. It is not on the appropriate screen."
+  Instead: `PUT /rest/api/3/issue/<KEY>` with `{"fields": {"parent": {"key": "<EPIC>"}}}`.
+  Works on both CREATE and UPDATE. Always use `/rest/api/3/`, not `/rest/api/2/`.
 - Contributor field (`customfield_12313240`) may not be on the edit screen —
   the PUT will error. This is a Jira screen configuration issue, not a bug.
 - Transition IDs vary per project/workflow — always discover them, never
