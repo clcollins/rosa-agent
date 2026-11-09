@@ -1,6 +1,6 @@
 ---
 name: pmr-action-item
-description: Investigate and resolve a PMR (Post-Mortem Review) action-item Jira ticket (labels pmr-ai and pmr-ai-ready) assigned to the rosa-agent user - read the ticket, fork the repo it concerns, implement the described work on a feature branch, run security review, then critical code review with a different model, implement review findings, re-run security check, and open a PR. Built for per-ticket invocation (one issue key per run); a future job/cron could enumerate pmr-ai-ready tickets and invoke this once per key, the way job-image-vuln-check fans out over targets. Use when asked to investigate, work, or action a PMR ticket/action item, or when given a Jira issue key labeled pmr-ai-ready. Trigger keywords - PMR, PMR action item, pmr-ai-ready, post-mortem action item, investigate ticket, action item ticket.
+description: Investigate and resolve a PMR (Post-Mortem Review) action-item Jira ticket (labels pmr-ai and pmr-ai-ready) assigned to the rosa-agent user - read the ticket, fork the repo it concerns, implement the described work on a feature branch, run security review, then critical code review with a different model, implement review findings, re-run security check, and open a PR. Built for per-ticket invocation (one issue key per run); a future job/cron could enumerate pmr-ai-ready tickets and invoke this once per key, the way job-image-vuln-check fans out over targets. Use when asked to investigate, work, or action a PMR ticket/action item, or when given a Jira issue key labeled pmr-ai or pmr-ai-ready. Trigger keywords - PMR, PMR-AI, PMR action item, pmr-ai, pmr-ai-ready, post-mortem action item, investigate ticket, action item ticket.
 ---
 
 # PMR action item: investigate a ticket, fix it, PR it
@@ -16,9 +16,21 @@ that enumeration is out of scope here.
 **The `pmr-ai-ready` label indicates:**
 
 - The ticket has been through the proposal stage (`pmr-remediation-analysis` skill)
-- A structured remediation proposal exists
+- A structured remediation proposal exists as a Jira comment
 - Human grooming gate has approved (or is pending)
 - The ticket is ready for implementation
+
+**For cron/enumerator use:** any script that feeds issue keys to this skill MUST
+filter by `statusCategory = "To Do"` in its JQL. Tickets already In Progress or
+Done must never be handed to this skill — the status transition in step 2b is the
+distributed lock that makes this work across concurrent runs.
+
+Example enumerator JQL:
+
+```text
+labels = "pmr-ai" AND labels = "pmr-ai-ready" AND assignee = "<rosa-agent accountId>"
+  AND statusCategory = "To Do" ORDER BY created ASC
+```
 
 Retrieval/mechanics that are genuinely deterministic (fork sync, failure
 reporting) are scripted below, exactly like the other job skills in this
@@ -48,6 +60,11 @@ is a usage error, not a blocker to negotiate with the ticket - there's no
 ticket yet to comment on. Stop and report it via `file_failure_issue` (see
 the Failures section below): a human reads that later, not a live prompt.
 
+**Validate the key format** before using it anywhere. It must match
+`^[A-Z][A-Z0-9]+-[0-9]+$` (e.g. `ROSAENG-62312`, `MCS-207`). If it doesn't,
+this is a usage error — stop and `file_failure_issue`. Never interpolate an
+unvalidated key into shell commands or Jira API paths.
+
 ## 2. Read the ticket
 
 Per `AGENTS.md`, any Jira call MUST go through the `jira` skill - load it now
@@ -56,26 +73,138 @@ and run its auth-detection block once. Then:
 `GET $JB/rest/api/3/issue/<ISSUE-KEY>`
 
 - Confirm BOTH the `pmr-ai` and `pmr-ai-ready` labels are present on the ticket.
-  - If `pmr-ai-ready` is missing → the ticket hasn't been through the proposal
-    stage yet (`pmr-remediation-analysis` skill). Stop and report via
-    `file_failure_issue` - this is a workflow violation, not a ticket blocker.
+  - If `pmr-ai` is present but `pmr-ai-ready` is missing → the ticket hasn't
+    completed the proposal stage (`pmr-remediation-analysis` skill). This is a
+    ticket-specific condition, not a job failure — comment on the ticket (step 10
+    style) that it's missing `pmr-ai-ready` and stop. Do **not** call
+    `file_failure_issue`; the enumerator JQL includes `pmr-ai-ready` so cron
+    can't hit this path, making `file_failure_issue` spam-on-every-run.
   - If neither label is present → stop and report via `file_failure_issue`
-    (bad invocation - this skill is only for PMR action items).
+    (bad invocation — this skill only handles PMR action items, and there's no
+    ticket to comment on).
 - Read the full description and every comment - the work to do is described
   there, not inferred from the summary line alone.
+- **Check for the remediation proposal comment now.** Search the ticket's
+  comments for one beginning with the exact marker:
+  `PMR Remediation Analysis: Proposal complete — pmr-ai-ready tagged.`
+  This comment is posted by `pmr-remediation-analysis` step 8 before the
+  `pmr-ai-ready` tag is applied. If no such comment exists, this is a step 10
+  blocker — comment on the ticket that the proposal comment is missing and stop.
+  Do not proceed to implementation: the ticket may be misconfigured, or the
+  skill may have posted to stdout only. Checking here (not at step 7) avoids
+  wasting a full implementation run on a misconfigured ticket.
 - **Do not self-assign the ticket.** Assignment to `rosa-agent` is expected
   to already be set by whatever triggered this run - never call `PUT
   .../assignee` yourself. If the ticket is assigned to someone else, stop
   there - note it in the final output and do not touch their ticket; don't
   `file_failure_issue` for this, it isn't a failure.
 
+## 2b. Transition ticket to In Progress
+
+Immediately transition the Jira ticket to **In Progress**. This is the
+distributed lock: a second cron run that picks up the same ticket from the "To
+Do" queue will find it already In Progress and skip it (because the enumerator
+filters by `statusCategory = "To Do"`).
+
+**Get the available transitions:**
+
+```shell
+jira -H "Accept: application/json" \
+  "$JB/rest/api/3/issue/<ISSUE-KEY>/transitions"
+```
+
+Find the transition whose `name` is `"In Progress"` (or the nearest equivalent
+in this project's workflow — look for `to.statusCategory.key = "indeterminate"`).
+Extract its numeric `id`.
+
+**Apply the transition:**
+
+```shell
+jira -H "Content-Type: application/json" \
+  -X POST "$JB/rest/api/3/issue/<ISSUE-KEY>/transitions" \
+  -d '{"transition":{"id":"<id from above>"}}'
+```
+
+**Interpret the response by status:**
+
+- **2xx** → transition succeeded; continue.
+- **400 or 409** → likely a workflow constraint or race (the ticket left "To Do"
+  before this POST arrived). Stop quietly; do not call `file_failure_issue` —
+  this is the race-condition guard working as designed.
+- **401 or 403** → access error. This is a step 10 blocker: comment on the
+  ticket and stop. Do not mistake a proxy denial for a race loss.
+
+**Race condition note:** The Jira transition is a fast-path filter, not a hard
+mutex. If "In Progress" is a global transition in this Jira workflow (reachable
+from any status), a second run's POST will also succeed and both runs will
+proceed past 2b. Jira provides no compare-and-swap for transitions. The hard,
+atomic lock comes one step later in git (step 4):
+
+```shell
+git push --force-with-lease=refs/heads/${BRANCH}: origin "HEAD:refs/heads/${BRANCH}"
+```
+
+The empty expected value after the colon tells the server to reject the push
+unless the remote ref does not yet exist. This is evaluated atomically by the
+git server — the second run's push is rejected even when both runs are on
+identical commits. **A rejected push means this run lost the race: transition
+the ticket back to "To Do" and stop.** No ticket comment is needed; the other
+run holds the lock and will comment if it hits a blocker.
+
+**After a successful 2xx transition,** continue to step 3.
+
 ## 3. Identify the target repository
 
 This is inference, not a script: look for an explicit `owner/repo` or GitHub
 URL in the description/comments, the Jira project/component naming
 conventions, or linked issues. If you genuinely cannot determine which repo
-the ticket concerns, that's a blocker - go to step 7 (comment on the ticket
+the ticket concerns, that's a blocker - go to step 10 (comment on the ticket
 asking for the repo) rather than guessing one.
+
+From this point on, `$UPSTREAM` is the owner/repo identified above (e.g.
+`openshift-online/some-repo`) and `$FORK` is `rosa-agent/<repo-name>`.
+
+## 3a. Check for an existing PR or branch (deduplication)
+
+Now that you know `$UPSTREAM` and `$FORK`, check whether a prior run already
+handled this ticket. This step runs after step 3 (not before) because PMR PRs
+are opened from the fork against the upstream repo for the ticket's own target —
+not against `openshift-online/rosa-agent`.
+
+**Single API call covers all states** — open, merged, and closed-unmerged:
+
+```shell
+BRANCH="pmr-action-item/${ISSUE_KEY}"
+PR_RESULT=$(gh api \
+  "repos/${UPSTREAM}/pulls?head=rosa-agent:${BRANCH}&state=all" \
+  --jq '.[0] | {number, html_url, state, merged_at}')
+```
+
+**Check for an existing branch** on the fork:
+
+```shell
+gh api "repos/${FORK}/branches/${BRANCH}" --jq '.name' >/dev/null 2>&1
+BRANCH_EXISTS=$?  # 0 = branch exists; non-zero = 404 / not found
+```
+
+**Decision logic — and what to do with the In Progress lock in each case:**
+
+- **PR found, `state=open`** — work is already in review. Leave the ticket In
+  Progress (it correctly reflects active work). Ensure the remote link exists on
+  the ticket (`POST .../remotelink` if not already there). Stop — not a failure.
+- **PR found, `merged_at` not null** — ticket is done. Transition the ticket to
+  Done (find a "Done" or "Closed" transition id and POST it), or if that
+  transition is unavailable, leave a comment noting the PR is merged and the
+  ticket should be closed. Stop.
+- **PR found, `state=closed`, `merged_at` null** — prior run was abandoned; this
+  is a step 10 blocker. Comment on the ticket noting the closed-unmerged PR
+  (include URL), transition back to "To Do" (unlock), and stop. A human must
+  clean up the branch and PR before retrying.
+- **No PR, `$BRANCH_EXISTS=0`** (branch on fork, no PR) — a prior run may have
+  crashed mid-push. This is a step 10 blocker: comment on the ticket noting the
+  orphaned branch, transition back to "To Do" (unlock), and stop. Do not
+  silently discard — nobody reads cron stdout.
+- **No PR, no branch** → clear to proceed.
 
 ## 4. Fork and sync, then branch
 
@@ -93,11 +222,20 @@ FORK=rosa-agent/<repo-name> UPSTREAM=<owner>/<repo> \
   merge.
 - Do this fresh every run, even against a repo you've synced before.
 
-Then check out a feature branch named from the issue key, e.g.:
+Then check out a feature branch named from the issue key, and immediately
+push it with the atomic lease (the hard mutex against concurrent runs):
 
 ```shell
 git checkout -b "pmr-action-item/<ISSUE-KEY>"
+git push --force-with-lease=refs/heads/pmr-action-item/<ISSUE-KEY>: \
+  origin "HEAD:refs/heads/pmr-action-item/<ISSUE-KEY>"
 ```
+
+If the push is **rejected** (exit code non-zero, remote says the ref already
+exists), another run beat you to this branch. Transition the ticket back to
+"To Do" and stop — no comment needed, the other run holds the lock.
+If the push succeeds, this run owns the branch for the lifetime of the ticket.
+(Step 11 does the real content push; this push establishes the lease.)
 
 ## 5. Implement the work described in the ticket
 
@@ -141,20 +279,23 @@ yourself - treat it as a blocker (step 10): comment on the ticket describing
 the exact finding, and stop. Never open a PR carrying an unresolved CONFIRMED
 finding.
 
-## 7. Critical code review with independent model - mandatory
+## 7. Two parallel code reviews with independent models - mandatory
 
-After the security fan-out passes, perform a comprehensive code review using a
-**different model** than the one that implemented the change. This provides an
-independent perspective on code quality, correctness, and best practices.
+After the security fan-out passes, run **two parallel reviews** using different
+models. Fan both out simultaneously using the Agent tool so they run concurrently;
+collect both sets of findings before proceeding.
 
-**Use the Agent tool with `model="fable"` parameter** to spawn a code-review
-subagent running Claude Fable (or `model="opus"` if Fable is unavailable, or
-`model="haiku"` as a fallback). The key is using a different model than Sonnet
-for independent perspective.
+### 7a. Code quality review
 
-**To change the review model**: Edit the `model` parameter in the Agent call
-below. Current default is `"fable"`. Change to `"opus"` or `"haiku"` based on
-what's available in Vertex AI.
+Spawn a subagent with **`model="fable"`** (or `model="opus"` if Fable is
+unavailable, `model="haiku"` as a last fallback) to review code quality,
+correctness, and best practices.
+
+**Model availability:** If the preferred model (`fable`) is unavailable and you
+fall back, do **not** silently downgrade. If 7a falls to `haiku` and 7b also
+falls to `haiku`, both reviewers are the same model and the "independent model"
+guarantee collapses — treat that as a step 10 blocker: comment on the ticket
+stating the model availability issue and stop.
 
 Give the reviewing agent:
 
@@ -162,7 +303,7 @@ Give the reviewing agent:
 - The original Jira ticket context (what was requested)
 - The target repository's conventions (language, style, patterns observed)
 
-Ask the reviewing agent to critically assess:
+Ask it to critically assess:
 
 1. **Correctness** - does the code actually solve the ticket's requirement?
    Does it handle edge cases? Are there logic errors or off-by-one mistakes?
@@ -183,36 +324,92 @@ The reviewer must return **structured findings** with:
   ("function X doesn't check for nil Y before calling Y.Method()")
 - **Suggested fix** - what specific change resolves it
 
-**CRITICAL findings block the PR** - proceed to step 8 to implement them.
-IMPORTANT findings should be implemented if straightforward. MINOR findings can
-be noted but don't block.
+### 7b. Proposal adherence review (PMR-specific) - mandatory
 
-## 8. Implement code review findings
+Spawn a **second, separate subagent** with **`model="opus"`** (or `model="haiku"`
+if Opus is unavailable) to verify the implementation matches the approved
+remediation proposal. This reviewer is scoped entirely to proposal adherence —
+it does not re-do the quality review above.
 
-For each CRITICAL and IMPORTANT finding from step 7:
+**Retrieve the proposal** from the comment you verified in step 2 (the one
+starting with `PMR Remediation Analysis: Proposal complete — pmr-ai-ready tagged.`).
+By the time you reach step 7b, the proposal is already confirmed to exist.
 
-1. Read the specific file and line
-2. Implement the suggested fix (or a better alternative if you have one)
+Give the reviewing agent:
+
+- The approved remediation proposal (the full comment text retrieved from Jira)
+- The full diff (`git diff main...HEAD` or equivalent)
+- The target repository's conventions (language, style, patterns observed in the codebase)
+
+Ask it to assess:
+
+1. **Failure mechanism addressed** - does the implementation actually prevent
+   the failure mechanism identified in the proposal? Or does it treat a symptom
+   while leaving the root cause intact?
+2. **Scope adherence** - does the diff stay within the files and components
+   named in the proposal? Any unexplained scope creep is a finding.
+3. **Approach fidelity** - does the implementation follow the "How" described in
+   the proposal, or did it take a materially different approach? If different,
+   is the deviation justified and at least as sound?
+4. **Verification implemented** - does the diff include the tests and
+   observability work the proposal specified in its "Verification Approach"?
+5. **Workaround check** - if the proposal called for a code/architectural fix,
+   does the implementation deliver that (not a workaround)?
+
+The reviewer must return structured findings with:
+
+- **Severity**: CRITICAL (blocks PR), IMPORTANT (should fix), MINOR (noted only)
+- **Proposal section** the finding relates to (Failure Mechanism / Proposed
+  Change / Verification / Scope)
+- **Specific discrepancy** — exact quote from proposal vs what the diff does
+
+**CRITICAL findings from either 7a or 7b block the PR.**
+
+### Handling findings from steps 7a and 7b
+
+Collect all findings from both reviewers before acting. Then:
+
+- **CRITICAL findings from 7a** → proceed to step 8 to implement (code fix).
+  If you cannot safely implement, treat it as a step 10 blocker.
+- **CRITICAL findings from 7b (adherence)** — two explicit cases:
+  - The *implementation* can be changed to match the proposal (e.g. missing a
+    test the proposal specified, or a scope-creep file) → proceed to step 8 to
+    fix the implementation.
+  - The *proposal itself appears wrong* (the approved approach is unsound,
+    contradicts the codebase, or is impossible to implement correctly) →
+    **do not try to fix the code**. This is a step 10 blocker: comment on the
+    ticket with the exact discrepancy (quote the proposal section, explain why
+    it is wrong), and stop. A human must update the proposal before this ticket
+    can be retried.
+- **IMPORTANT findings** should be implemented if straightforward.
+- **MINOR findings** can be noted but don't block.
+
+## 8. Implement review findings
+
+For each CRITICAL and IMPORTANT finding from steps 7a and 7b:
+
+1. Read the specific file and line (or proposal section for 7b findings)
+2. Implement the fix (or a better alternative if you have one)
 3. Run the test suite again - it must still pass
-4. Commit the fix with a message like: `Address code review: <brief description>`
+4. Commit with a message like: `Address review: <brief description>`
 
-If you cannot safely implement a CRITICAL finding (e.g. it requires domain
-knowledge you don't have, or the suggested fix itself seems wrong), treat it as
-a blocker (step 10): comment on the ticket with the specific review finding and
-why you can't resolve it, then stop.
+If you cannot safely implement a CRITICAL finding (it requires domain knowledge
+you don't have, or the suggested fix itself seems wrong), treat it as a blocker
+(step 10): comment on the ticket with the specific finding and why you can't
+resolve it, then stop.
 
 ## 9. Re-run security fan-out after implementing review findings
 
-After implementing code review changes, **re-run the full security fan-out from
+After implementing review changes, **re-run the full security fan-out from
 step 6** (parallel subagents + security-review skill) against the updated diff.
 
 The review fixes may have introduced new code that needs security vetting. Any
 CONFIRMED security finding at this stage means: fix it and loop back through
-steps 7-9 until both security and code review are clean, or treat it as a
+steps 7-9 until both security and both code reviews are clean, or treat it as a
 blocker (step 10) if you can't safely fix it.
 
-**Only proceed to step 11 (open PR) when BOTH security review AND code review
-are clean with no unresolved CONFIRMED/CRITICAL findings.**
+**Only proceed to step 11 (open PR) when security review AND both code reviews
+(7a and 7b) are clean with no unresolved CONFIRMED/CRITICAL findings.**
 
 ## 10. Blockers - especially access issues - go on the ticket
 
@@ -238,13 +435,30 @@ and so are these, non-access blockers that equally stop forward progress:
 - failing tests you can't get green;
 - anything else that stops you from completing the ticket.
 
-**Do not retry around it, guess past it, or silently stop.** Instead, add a
-comment to the ticket (via the `jira` skill) stating plainly what you were
-doing and the exact cause of the issue - the literal error, HTTP status, and
-endpoint/host where relevant - so the engineers watching the ticket can
-triage it and figure out what to unblock, and the work can resume on a later
-run. This is a normal, expected outcome of hitting the edge of what this
-sandbox can reach - not a failure to hide or apologize for.
+**Do not retry around it, guess past it, or silently stop.** Instead:
+
+1. **Comment on the ticket** (via the `jira` skill) stating plainly what you were
+   doing and the exact cause of the issue — the literal error, HTTP status, and
+   endpoint/host where relevant — so engineers can triage and unblock.
+2. **Transition the ticket back to "To Do"** (or a "Blocked" status if the
+   workflow has one). The ticket is currently In Progress (locked by step 2b);
+   leaving it In Progress with no PR and no comment means it will never be
+   retried by the enumerator and no one will notice. Unlock it:
+
+   ```shell
+   # Get transitions again and find the "To Do" (or "Blocked") transition id
+   jira -H "Accept: application/json" \
+     "$JB/rest/api/3/issue/<ISSUE-KEY>/transitions"
+   jira -H "Content-Type: application/json" \
+     -X POST "$JB/rest/api/3/issue/<ISSUE-KEY>/transitions" \
+     -d '{"transition":{"id":"<to-do transition id>"}}'
+   ```
+
+   If the transition back also fails, log it — but do not stop reporting the
+   original blocker just because the unlock failed.
+
+This is a normal, expected outcome of hitting the edge of what this sandbox can
+reach — not a failure to hide or apologize for.
 
 ## 11. Open the PR
 
@@ -270,8 +484,14 @@ comment summarizing what was changed and why.
 
 - Never force-push, and never force a fork-sync past a divergence.
 - Never skip or weaken the security fan-out in step 6 or 9 to save time.
-- Never skip the critical code review in step 7 - the independent model review
-  is mandatory, not optional.
+- Never skip either code review in step 7 (7a quality review and 7b proposal
+  adherence review) — both are mandatory. Running them in parallel is efficient
+  but sequential execution is also valid; what is not valid is skipping one.
+- Never skip the deduplication check (step 3a) or the In Progress transition
+  (step 2b) — these are what prevent duplicate PRs on cron-driven runs.
+- Never leave a ticket In Progress on exit without either a PR link (step 12)
+  or a blocker comment (step 10). If you are stopping for any reason after step
+  2b, always comment on the ticket and transition it back to "To Do".
 - Never invent a target repository, a Jira host/email, or any credential -
   if you don't know it, that's a blocker (step 10), not something to guess.
 - Never retry past a `403` or any other access issue - report the exact
@@ -282,7 +502,7 @@ comment summarizing what was changed and why.
 ## Failures
 
 A genuine technical failure in this job's own mechanics (not a ticket-specific
-blocker - see step 7 for those) gets reported via `file_failure_issue`
+blocker - see step 10 for those) gets reported via `file_failure_issue`
 (sourced from `scripts/common.sh`) against `openshift-online/rosa-agent` -
 never retried, never routed around. `sync_fork.sh` already calls it on its
 own failure; call it directly for anything else:
@@ -291,3 +511,8 @@ own failure; call it directly for anything else:
 source /sandbox/.claude/skills/pmr-action-item/scripts/common.sh
 file_failure_issue "<stage>" "<exact captured error>"
 ```
+
+If the failure occurs after step 2b (the ticket is In Progress), also
+transition the ticket back to "To Do" and add a blocker comment per step 10
+before calling `file_failure_issue`. The GitHub issue documents the job
+failure; the ticket comment documents what needs unblocking.

@@ -1,6 +1,6 @@
 # PMR Action Item Job
 
-Automated processing of PMR (Post-Mortem Review) action items labeled `PMR-AI-PILOT` in Jira.
+Automated processing of PMR (Post-Mortem Review) action items labeled `pmr-ai` and `pmr-ai-ready` in Jira.
 
 ## Architecture
 
@@ -9,13 +9,14 @@ Two-tier job pattern:
 ### 1. Enumerator (CronJob)
 
 **Runs**: Daily at 04:00 UTC  
-**File**: `job-pmr-action-item-enumerator-cron.yaml`  
+**File**: `job-pmr-action-item-enumerator-cron.yaml` (not yet in the repo — see SKILL.md for the enumerator contract)  
 **ServiceAccount**: `rosa-agent-bot-3`
 
 The enumerator:
 
-1. Queries Jira for open PMR-AI-PILOT tickets assigned to `rosa-agent`
-   - JQL: `project = ROSAENG AND labels = PMR-AI-PILOT AND assignee = rosa-agent AND status not in (Done, Closed, Resolved)`
+1. Queries Jira for open `pmr-ai-ready` tickets assigned to `rosa-agent`
+   - See `SKILL.md` for the authoritative enumerator JQL — that file is the
+     single source of truth; do not duplicate it here.
 2. Creates one Kubernetes Job per ticket found
 3. Exits (worker Jobs run independently)
 

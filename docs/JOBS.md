@@ -47,15 +47,18 @@ skills live under `sandbox/skills/`.
 
 * **`pmr-action-item`** (`sandbox/skills/pmr-action-item/SKILL.md`) — enumerates and processes
     PMR (Post-Mortem Review) action items. Uses a two-tier architecture: an enumerator CronJob
-    queries Jira for open tickets labeled `PMR-AI-PILOT` and assigned to `rosa-agent`, then spawns
-    one worker Job per ticket. Each worker reads the ticket, identifies the target repo, syncs the
-    rosa-agent fork, implements the described change on a feature branch, runs the repo's test
-    suite, executes a mandatory security review (parallel subagents for secrets/injection/authz/
-    supply-chain risks plus the `/security-review` skill), and opens a PR if clean or comments
-    blockers on the ticket if not. Workers run in parallel but each processes exactly one ticket,
-    avoiding fork contention. Any access issue (403, missing credential, egress block) or unresolvable
-    blocker goes as a ticket comment, not a silent failure. Deployed directly to the `rosa-agent-stage`
-    namespace (see `job-pmr-action-item-enumerator-cron.yaml`), daily at 04:00 UTC.
+    queries Jira for open tickets labeled `pmr-ai` and `pmr-ai-ready` assigned to `rosa-agent`
+    with `statusCategory = "To Do"`, then spawns one worker Job per ticket. Each worker reads the
+    ticket, identifies the target repo, syncs the rosa-agent fork, implements the described change
+    on a feature branch, runs the repo's test suite, executes a mandatory security review (parallel
+    subagents for secrets/injection/authz/supply-chain risks plus the `/security-review` skill),
+    runs two parallel code reviews (7a quality with Fable, 7b proposal adherence with Opus), and
+    opens a PR if clean or comments blockers on the ticket if not. Workers run in parallel but each
+    processes exactly one ticket, avoiding fork contention. Any access issue (403, missing
+    credential, egress block) or unresolvable blocker goes as a ticket comment, not a silent
+    failure. Enumerator CronJob manifest (`job-pmr-action-item-enumerator-cron.yaml`) is not yet
+    in the repo — see `SKILL.md` for the authoritative enumerator contract. Target: daily at
+    04:00 UTC in the `rosa-agent-stage` namespace.
 
 ## Scheduled jobs
 
@@ -92,7 +95,7 @@ are needed.
 * [`job-sop-improve-cron.yaml`](../sandbox/skills/job-sop-improve/job-sop-improve-cron.yaml)
 * [`job-image-vuln-check-cron.yaml`](../sandbox/skills/job-image-vuln-check/job-image-vuln-check-cron.yaml)
 * [`job-ops-sop-pr-review-cron.yaml`](../sandbox/skills/job-ops-sop-pr-review/job-ops-sop-pr-review-cron.yaml)
-* [`job-pmr-action-item-enumerator-cron.yaml`](../sandbox/skills/pmr-action-item/job-pmr-action-item-enumerator-cron.yaml)
+* `job-pmr-action-item-enumerator-cron.yaml` — not yet in the repo (see `pmr-action-item/SKILL.md` for the enumerator contract)
 
 ### Vault-injected credential
 

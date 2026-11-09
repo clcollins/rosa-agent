@@ -22,7 +22,7 @@ Given a PMR action brief (from intake), this skill:
 ✅ Proposes code or architectural fix (workarounds need justification)  
 ✅ Defines verification approach (tests, observability, canary)  
 ✅ Captures provenance (what evidence was used, what was investigated)  
-✅ Tags Jira issue with `PMR-AI-Ready` label to signal proposal completion  
+✅ Tags Jira issue with `pmr-ai-ready` label to signal proposal completion  
 ❌ **OR** explicitly declines if no sound proposal can be made
 
 ## What This Does NOT Do
@@ -90,9 +90,9 @@ HOW: [Implementation approach]
 [Evidence used, investigation trail, decisions]
 
 ## Next Steps
-1. **Tag issue:** Adds `PMR-AI-Ready` label to Jira
+1. **Tag issue:** Adds `pmr-ai-ready` label to Jira
 2. **Grooming gate:** Human review/approval  
-3. **Implementation:** `pmr-action-item` skill (only runs on `PMR-AI-Ready` tickets)
+3. **Implementation:** `pmr-action-item` skill (only runs on `pmr-ai-ready` tickets)
 4. **Review gate:** PR review before merge
 ```
 
