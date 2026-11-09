@@ -126,6 +126,73 @@ class ResolveTagDigestTests(unittest.TestCase):
             params={"vulnerabilities": "true"},
         )
 
+    @patch.object(QuayAPIClient, "_get")
+    def test_manifest_list_picks_amd64_child(self, mock_get):
+        manifest_list = {
+            "manifests": [
+                {"digest": "sha256:arm64child", "platform": {"architecture": "arm64", "os": "linux"}},
+                {"digest": "sha256:amd64child", "platform": {"architecture": "amd64", "os": "linux"}},
+            ]
+        }
+        mock_get.side_effect = [
+            {"tags": [{"manifest_digest": "sha256:listdigest", "is_manifest_list": True}]},
+            {"manifest_data": json.dumps(manifest_list)},
+        ]
+        digest = self.client.resolve_tag_digest("ns/repo", "latest")
+        self.assertEqual(digest, "sha256:amd64child")
+        mock_get.assert_any_call("/repository/ns/repo/manifest/sha256:listdigest")
+
+    @patch.object(QuayAPIClient, "_get")
+    def test_manifest_list_falls_back_to_first_child_without_amd64(self, mock_get):
+        manifest_list = {
+            "manifests": [
+                {"digest": "sha256:ppc64child", "platform": {"architecture": "ppc64le", "os": "linux"}},
+                {"digest": "sha256:armchild", "platform": {"architecture": "arm", "os": "linux"}},
+            ]
+        }
+        mock_get.side_effect = [
+            {"tags": [{"manifest_digest": "sha256:listdigest", "is_manifest_list": True}]},
+            {"manifest_data": json.dumps(manifest_list)},
+        ]
+        digest = self.client.resolve_tag_digest("ns/repo", "latest")
+        self.assertEqual(digest, "sha256:ppc64child")
+
+    @patch.object(QuayAPIClient, "_get")
+    def test_manifest_list_with_no_usable_children_raises(self, mock_get):
+        mock_get.side_effect = [
+            {"tags": [{"manifest_digest": "sha256:listdigest", "is_manifest_list": True}]},
+            {"manifest_data": json.dumps({"manifests": []})},
+        ]
+        with self.assertRaises(QuayAPIError):
+            self.client.resolve_tag_digest("ns/repo", "latest")
+
+    @patch.object(QuayAPIClient, "_get")
+    def test_manifest_list_missing_manifest_data_raises(self, mock_get):
+        mock_get.side_effect = [
+            {"tags": [{"manifest_digest": "sha256:listdigest", "is_manifest_list": True}]},
+            {},
+        ]
+        with self.assertRaises(QuayAPIError):
+            self.client.resolve_tag_digest("ns/repo", "latest")
+
+    @patch.object(QuayAPIClient, "_get")
+    def test_manifest_list_unparseable_manifest_data_raises(self, mock_get):
+        mock_get.side_effect = [
+            {"tags": [{"manifest_digest": "sha256:listdigest", "is_manifest_list": True}]},
+            {"manifest_data": "not json"},
+        ]
+        with self.assertRaises(QuayAPIError):
+            self.client.resolve_tag_digest("ns/repo", "latest")
+
+    @patch.object(QuayAPIClient, "_get")
+    def test_non_manifest_list_tag_skips_manifest_list_resolution(self, mock_get):
+        mock_get.return_value = {
+            "tags": [{"manifest_digest": "sha256:abc", "is_manifest_list": False}]
+        }
+        digest = self.client.resolve_tag_digest("ns/repo", "latest")
+        self.assertEqual(digest, "sha256:abc")
+        mock_get.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
