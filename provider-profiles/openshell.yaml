@@ -65,11 +65,12 @@ discovery:
   credentials:
   - oidc_client_secret
 endpoints:
-# Keycloak issuer for hyp2. Two rules only: discovery GET then token POST.
+# Keycloak OIDC issuer. Wildcarded to cover all tiers (hyp0, hyp1, hyp2).
+# * matches one subdomain level: keycloak.hyp0, keycloak.hyp1, keycloak.hyp2.
 # The client secret travels in the POST body (sdk/go oidc/credentials.go:105),
 # so request_body_credential_rewrite is required; enforcement: enforce makes
 # this block deny-by-default rather than audit (fail-open).
-- host: keycloak.hyp2.infra.hypershell.app
+- host: "keycloak.*.infra.hypershell.app"
   port: 443
   protocol: rest
   enforcement: enforce
@@ -81,18 +82,17 @@ endpoints:
   - allow:
       method: POST
       path: /realms/hypershell/protocol/openid-connect/token
-# Gateway control-plane endpoint for hyp2. Deliberately L4 (no protocol,
-# access, or rules): openshellctl speaks gRPC (HTTP/2 via ALPN h2), but the
-# supervisor's L7 relay presents only ALPN http/1.1, so an L7 endpoint breaks
-# every call. L4 tunnels TLS end-to-end to the gateway; authorization is
-# entirely the SA's gateway role. No credential rewrite is needed here — the
-# sandbox presents the JWT it minted from Keycloak, not a placeholder.
+# Gateway control-plane endpoint. Wildcarded with ** to cover all tiers and
+# gateway hash subdomains (e.g. gw-openshell-<hash>.<tier>.infra.hypershell.app).
+# Deliberately L4 (no protocol, access, or rules): openshellctl speaks gRPC
+# (HTTP/2 via ALPN h2), but the supervisor's L7 relay presents only ALPN
+# http/1.1, so an L7 endpoint breaks every call. L4 tunnels TLS end-to-end
+# to the gateway; authorization is entirely the SA's gateway role.
 # allow_uninspected_credentials: the linter requires this explicit opt-in when
 # the sandbox holds any declared credential and the endpoint is L4 (no L7
 # inspection possible). The OIDC client secret does NOT travel to this host;
-# the sandbox uses the JWT it minted from Keycloak. This field acknowledges
-# that fact rather than relaxing any security control.
-- host: gw-openshell-02c8f9e0680fb903.hyp2-spoke1.infra.hypershell.app
+# the sandbox uses the JWT it minted from Keycloak.
+- host: "**.infra.hypershell.app"
   port: 443
   allow_uninspected_credentials: true
 binaries:
