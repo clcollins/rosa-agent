@@ -64,8 +64,8 @@ endpoints:
     rules:
       - allow: { method: GET, path: "/proxy-golang-org-prod/**" }
       - allow: { method: HEAD, path: "/proxy-golang-org-prod/**" }
-# /usr/bin/go is the real path of go-toolset's binary on UBI9. Verify with
-# `readlink -f /usr/bin/go` in the built image: if go-toolset installs a
-# symlink, OpenShell matches the kernel-resolved target, not the symlink.
-binaries: [/usr/bin/go]
+# /usr/bin/go is a symlink; OpenShell matches the kernel-resolved target.
+# Verified with `readlink -f /usr/bin/go` in rosa-agent-pr130-v3:
+#   /usr/bin/go → /usr/lib/golang/bin/go
+binaries: [/usr/lib/golang/bin/go]
 inference_capable: false

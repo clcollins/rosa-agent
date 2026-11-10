@@ -46,16 +46,15 @@ endpoints:
     protocol: rest
     access: read-only
     enforcement: enforce
-  # quay.io blob storage backend — config-blob fetches (used by skopeo inspect
-  # to read OCI labels such as org.opencontainers.image.source) redirect here.
-  # Path-scoped to quay's observed S3 bucket; other buckets are denied.
-  # BUCKET PATH UNVERIFIED: confirm from `skopeo --debug inspect` output.
-  - host: s3.us-east-1.amazonaws.com
+  # quay.io blob storage CDN — config-blob fetches (used by skopeo inspect
+  # to read OCI labels such as org.opencontainers.image.source) redirect to
+  # cdn01.quay.io (and potentially other cdn*.quay.io backends). Wildcard
+  # covers all CDN backends. Verified from `skopeo --debug inspect` output
+  # (2026-11-10): redirect goes to cdn01.quay.io/quayio-production-s3/sha256/…
+  - host: "*.quay.io"
     port: 443
     protocol: rest
+    access: read-only
     enforcement: enforce
-    rules:
-      - allow: { method: GET, path: "/quayio-production-s3/**" }
-      - allow: { method: HEAD, path: "/quayio-production-s3/**" }
 binaries: [/usr/bin/skopeo, /usr/bin/curl]
 inference_capable: false
