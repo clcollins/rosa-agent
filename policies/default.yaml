@@ -1,12 +1,22 @@
 version: 1
-# Filesystem policy: /dev/null must be explicitly writable or bash login shells
-# fail silently (Landlock blocks /etc/profile redirections, producing the
-# "/dev/null: Permission denied" noise seen at sandbox startup).
-# The supervisor adds /usr, /lib, /etc, /proc, /tmp, /dev/urandom automatically
-# as baseline paths; /dev/null is not in that set and must be declared here.
+# Filesystem policy: baseline read-only paths must be declared explicitly when
+# network_policies is empty. The supervisor's enrich_proto_baseline_paths only
+# runs when at least one network policy exists (lib.rs:1743); with an empty map
+# the policy is used as-is. Without these paths Landlock blocks /usr/bin,
+# /lib64/ld-linux-*, /etc and the main process cannot execve.
+# /dev/null must be explicitly writable or bash login shells fail silently
+# (Landlock blocks /etc/profile redirections).
 filesystem_policy:
   include_workdir: true
-  read_only: []
+  read_only:
+    - /bin
+    - /usr
+    - /lib
+    - /etc
+    - /app
+    - /var/log
+    - /proc
+    - /dev/urandom
   read_write:
     - /tmp
     - /dev/null
