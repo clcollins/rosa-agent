@@ -35,4 +35,4 @@ metadata:
 spec:
   name_prefix: rosa-agent-
   image: quay.io/redhat-services-prod/rosa-tenant/rosa-agent/rosa-agent:latest
-  policy: '{"version":1,"filesystem_policy":{"include_workdir":true,"read_only":[],"read_write":["/tmp","/dev/null"]},"network_policies":{}}'
+  policy: '{"version":1,"filesystem_policy":{"include_workdir":true,"read_only":["/bin","/usr","/lib","/etc","/app","/var/log","/proc","/dev/urandom"],"read_write":["/tmp","/dev/null"]},"network_policies":{}}'
