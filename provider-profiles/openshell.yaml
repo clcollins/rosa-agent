@@ -13,10 +13,14 @@
 #   account's role (openshell-admin). Do not add protocol/access/rules to
 #   the gateway block.
 #
-#   Non-secret runtime values are passed at sandbox create as plain env vars
-#   (same pattern as JIRA_EMAIL/JIRA_BASE_URL):
-#     OPENSHELL_GATEWAY_ENDPOINT, OPENSHELL_OIDC_ISSUER,
-#     OPENSHELL_OIDC_CLIENT_ID, OPENSHELL_OIDC_AUDIENCE
+#   Non-secret runtime values (gateway endpoint, OIDC issuer, client id,
+#   audience) cannot be passed as OPENSHELL_* sandbox env: that prefix is
+#   reserved and rejected by both openshellctl and the gateway. Pass them under
+#   unreserved names (the E2E uses NESTED_*) and hand them to openshellctl as
+#   flags: --oidc-issuer, --oidc-client-id, --oidc-audience, and the endpoint as
+#   the `gateway add` argument. `gateway add` persists them to metadata.json.
+#   Only OPENSHELL_OIDC_CLIENT_SECRET uses the reserved prefix; it is injected
+#   by the provider, which is exempt.
 #
 # Blast radius:
 #   The service account token role is openshell-admin; a sandbox holding this
@@ -82,18 +86,25 @@ endpoints:
   - allow:
       method: POST
       path: /realms/hypershell/protocol/openid-connect/token
-# Gateway control-plane endpoint. Wildcarded with ** to cover all tiers and
-# gateway hash subdomains (e.g. gw-openshell-<hash>.<tier>.infra.hypershell.app).
-# Deliberately L4 (no protocol, access, or rules): openshellctl speaks gRPC
-# (HTTP/2 via ALPN h2), but the supervisor's L7 relay presents only ALPN
-# http/1.1, so an L7 endpoint breaks every call. L4 tunnels TLS end-to-end
-# to the gateway; authorization is entirely the SA's gateway role.
-# allow_uninspected_credentials: the linter requires this explicit opt-in when
-# the sandbox holds any declared credential and the endpoint is L4 (no L7
-# inspection possible). The OIDC client secret does NOT travel to this host;
-# the sandbox uses the JWT it minted from Keycloak.
-- host: "**.infra.hypershell.app"
+# Gateway control-plane endpoint. The pattern covers
+# gw-openshell-<hash>.<tier>.infra.hypershell.app for all tiers; it must never
+# match a host that an L7 endpoint in this profile also matches, because the
+# supervisor combines guards with all() and refuses the connection — the client
+# sees only a bare EOF with no diagnostic. A partial-label wildcard is valid
+# only in the first DNS label (host_wildcard_shape_invalid).
+# No protocol/access/rules: openshellctl speaks gRPC (HTTP/2 via ALPN h2).
+# tls: skip is required because the supervisor's default TLS termination
+# (tls: auto) negotiates only ALPN http/1.1, which gRPC rejects with
+# "tls: no application protocol". skip makes the tunnel a raw passthrough
+# so the TLS handshake reaches the gateway directly and h2 negotiates.
+# Never put tls: skip on the Keycloak endpoint — it needs credential rewrite.
+# allow_uninspected_credentials: required by the linter when the sandbox
+# holds a declared credential and the endpoint has no L7 inspection.
+# The OIDC client secret does NOT travel to this host; the sandbox uses
+# the JWT it minted from Keycloak.
+- host: "gw-openshell-*.*.infra.hypershell.app"
   port: 443
+  tls: skip
   allow_uninspected_credentials: true
 binaries:
 - /usr/local/bin/openshellctl

@@ -5,6 +5,7 @@ Tests are skipped when the module is absent so the baseline stays clean
 in environments that have not installed it.
 """
 
+import fnmatch
 import re
 import unittest
 from pathlib import Path
@@ -205,6 +206,27 @@ class TestOpenshellProfileShape(unittest.TestCase):
                     f"(linter requires explicit opt-in for L4 endpoints in credentialed profiles)",
                 )
 
+    def test_gateway_tls_skip(self):
+        for ep in self.endpoints:
+            if _is_gateway(ep):
+                self.assertEqual(
+                    ep.get("tls"),
+                    "skip",
+                    f"gateway host {ep['host']} must have tls: skip "
+                    f"(without it the supervisor terminates TLS with ALPN http/1.1 only, "
+                    f"which gRPC rejects with 'tls: no application protocol')",
+                )
+
+    def test_l7_endpoints_have_no_tls_key(self):
+        for ep in self.endpoints:
+            if ep.get("protocol"):
+                self.assertNotIn(
+                    "tls",
+                    ep,
+                    f"L7 endpoint {ep['host']} must not have a 'tls' key "
+                    f"(tls: skip would disable credential rewrite)",
+                )
+
     def test_gateway_port_443(self):
         for ep in self.endpoints:
             if _is_gateway(ep):
@@ -256,6 +278,153 @@ class TestAllProfileCategories(unittest.TestCase):
             violations,
             "Invalid category in provider profile(s):\n" + "\n".join(violations),
         )
+
+
+def host_pattern_matches(pattern, host):
+    """Pure host-pattern matcher mirroring OpenShell's host_pattern.rs.
+
+    Rules:
+    - Both pattern and host are lower-cased and split on '.'.
+    - A '**' label consumes one or more host labels.
+    - Any other label is matched with fnmatch against exactly one host label.
+    - All labels must be consumed for a match.
+    """
+    pattern = pattern.lower()
+    host = host.lower()
+    p_labels = pattern.split(".")
+    h_labels = host.split(".")
+
+    def _match(pi, hi):
+        if pi == len(p_labels) and hi == len(h_labels):
+            return True
+        if pi == len(p_labels) or hi == len(h_labels):
+            return False
+        if p_labels[pi] == "**":
+            for consume in range(1, len(h_labels) - hi + 1):
+                if _match(pi + 1, hi + consume):
+                    return True
+            return False
+        if fnmatch.fnmatchcase(h_labels[hi], p_labels[pi]):
+            return _match(pi + 1, hi + 1)
+        return False
+
+    return _match(0, 0)
+
+
+class TestHostPatternMatches(unittest.TestCase):
+    """Table-driven tests for the pure host_pattern_matches function."""
+
+    _CASES = [
+        # (pattern, host, expected)
+        ("**.infra.hypershell.app", "keycloak.hyp0.infra.hypershell.app", True),
+        ("**.infra.hypershell.app", "gw-openshell-02c8f9e0680fb903.hyp2-spoke1.infra.hypershell.app", True),
+        ("gw-openshell-*.*.infra.hypershell.app", "gw-openshell-02c8f9e0680fb903.hyp2-spoke1.infra.hypershell.app", True),
+        ("gw-openshell-*.*.infra.hypershell.app", "gw-openshell-0000000000000000.hyp1-hub.infra.hypershell.app", True),
+        ("gw-openshell-*.*.infra.hypershell.app", "gw-openshell-0000000000000000.hyp0-spoke2.infra.hypershell.app", True),
+        ("gw-openshell-*.*.infra.hypershell.app", "keycloak.hyp0.infra.hypershell.app", False),
+        ("gw-openshell-*.*.infra.hypershell.app", "keycloak.hyp1.infra.hypershell.app", False),
+        ("gw-openshell-*.*.infra.hypershell.app", "keycloak.hyp2.infra.hypershell.app", False),
+        ("keycloak.*.infra.hypershell.app", "keycloak.hyp0.infra.hypershell.app", True),
+        ("keycloak.*.infra.hypershell.app", "keycloak.hyp1.infra.hypershell.app", True),
+        ("keycloak.*.infra.hypershell.app", "keycloak.hyp2.infra.hypershell.app", True),
+        ("keycloak.*.infra.hypershell.app", "keycloak.a.b.infra.hypershell.app", False),
+        ("*.example.com", "api.example.com", True),
+        ("*.example.com", "example.com", False),
+        ("*.example.com", "deep.api.example.com", False),
+        ("**.example.com", "deep.api.example.com", True),
+        ("**.example.com", "example.com", False),
+    ]
+
+    def test_host_pattern_matching(self):
+        for pattern, host, expected in self._CASES:
+            with self.subTest(pattern=pattern, host=host):
+                self.assertEqual(
+                    host_pattern_matches(pattern, host),
+                    expected,
+                    f"host_pattern_matches({pattern!r}, {host!r}) should be {expected}",
+                )
+
+
+KEYCLOAK_HOSTS = [
+    "keycloak.hyp0.infra.hypershell.app",
+    "keycloak.hyp1.infra.hypershell.app",
+    "keycloak.hyp2.infra.hypershell.app",
+]
+GATEWAY_HOSTS = [
+    "gw-openshell-02c8f9e0680fb903.hyp2-spoke1.infra.hypershell.app",
+    "gw-openshell-0000000000000000.hyp1-hub.infra.hypershell.app",
+    "gw-openshell-0000000000000000.hyp0-spoke2.infra.hypershell.app",
+]
+
+
+@unittest.skipUnless(YAML_AVAILABLE, "PyYAML required (install python3-pyyaml)")
+class TestEndpointOverlap(unittest.TestCase):
+    """No L4 (no-protocol) endpoint must match a Keycloak host.
+
+    When a credentialed profile has two endpoints matching the same host:port,
+    the supervisor combines their guards with all(). If one is L4
+    (allow_uninspected_credentials, no protocol) and the other is L7
+    (protocol: rest), the combined guard refuses the connection and the client
+    sees a bare EOF. This test catches that regression.
+    """
+
+    def setUp(self):
+        with open(PROFILE_PATH, encoding="utf-8") as fh:
+            self.profile = yaml.safe_load(fh)
+        self.endpoints = self.profile.get("endpoints", [])
+
+    def test_no_l4_endpoint_matches_keycloak(self):
+        """AC (a): no endpoint without protocol matches any Keycloak host."""
+        l4_endpoints = [e for e in self.endpoints if "protocol" not in e]
+        for ep in l4_endpoints:
+            for kc_host in KEYCLOAK_HOSTS:
+                self.assertFalse(
+                    host_pattern_matches(ep["host"], kc_host),
+                    f"L4 endpoint {ep['host']!r} matches Keycloak host {kc_host!r} — "
+                    f"this causes the supervisor to refuse the connection (EOF)",
+                )
+
+    def test_l7_endpoint_matches_keycloak(self):
+        """AC (b): an endpoint with protocol: rest matches each Keycloak host."""
+        l7_endpoints = [e for e in self.endpoints if e.get("protocol") == "rest"]
+        for kc_host in KEYCLOAK_HOSTS:
+            matched = any(host_pattern_matches(e["host"], kc_host) for e in l7_endpoints)
+            self.assertTrue(
+                matched,
+                f"No L7 (protocol: rest) endpoint matches Keycloak host {kc_host!r}",
+            )
+
+    def test_l4_endpoint_matches_gateways(self):
+        """AC (c): L4 endpoint matches all gateway hosts."""
+        l4_endpoints = [e for e in self.endpoints if "protocol" not in e]
+        for gw_host in GATEWAY_HOSTS:
+            matched = any(host_pattern_matches(e["host"], gw_host) for e in l4_endpoints)
+            self.assertTrue(
+                matched,
+                f"No L4 endpoint matches gateway host {gw_host!r}",
+            )
+
+    def test_no_l7_endpoint_matches_gateways(self):
+        """AC (c) cont: no L7 endpoint matches any gateway host."""
+        l7_endpoints = [e for e in self.endpoints if "protocol" in e]
+        for gw_host in GATEWAY_HOSTS:
+            for ep in l7_endpoints:
+                self.assertFalse(
+                    host_pattern_matches(ep["host"], gw_host),
+                    f"L7 endpoint {ep['host']!r} matches gateway host {gw_host!r}",
+                )
+
+    def test_partial_wildcard_only_in_first_label(self):
+        """AC (d): a label containing * but not exactly * or ** appears only as first label."""
+        for ep in self.endpoints:
+            labels = ep["host"].split(".")
+            for i, label in enumerate(labels):
+                if "*" in label and label not in ("*", "**"):
+                    self.assertEqual(
+                        i, 0,
+                        f"Partial wildcard {label!r} in endpoint {ep['host']!r} "
+                        f"is at label index {i}, must be 0 (first label only)",
+                    )
 
 
 if __name__ == "__main__":

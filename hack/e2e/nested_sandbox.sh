@@ -98,11 +98,11 @@ _run_sandbox() {
 # ---------------------------------------------------------------------------
 # Check 1: Negative control — no provider → egress must be denied.
 #
-# The Go SDK wraps transport failures (connect/refused, EOF) in
-# oidc.discovery or ErrClientCredentials — the proxy's L7 "policy_denied"
-# JSON only surfaces on L7-inspected hosts; the gateway endpoint is L4, so
-# checking for "forbidden" or "denied" text is unreliable on a correctly-
-# gated gateway and would produce misleading FAIL results.
+# Without the openshell provider, the broker denies the connect() itself
+# (EACCES), so the expected inner error is "connect: permission denied",
+# not an L7 policy_denied body and not EOF. The Go SDK wraps transport
+# failures in oidc.discovery or ErrClientCredentials; checking for specific
+# error text is unreliable, so we use structured markers instead.
 #
 # Instead, SCRIPT1 emits structured markers:
 #   SANDBOX_UP          — sandbox ran (not a local failure before create)
@@ -116,10 +116,15 @@ _info "=== Check 1: negative control (no provider) ==="
 NAME1="e2e-nested-${RUN_ID}-1"
 # Single-quoted so variable references expand inside the sandbox (not here).
 # OPENSHELL_OIDC_CLIENT_SECRET=e2e-dummy causes openshellctl to attempt the
-# Keycloak token POST; the proxy (no openshell provider) must deny the egress.
+# Keycloak token POST; without the provider, the broker denies the connect()
+# itself, so the expected inner error is connect: permission denied.
 # ';' instead of '&&' so whoami always runs regardless of gateway add result.
 SCRIPT1='echo SANDBOX_UP
-OPENSHELL_OIDC_CLIENT_SECRET=e2e-dummy openshellctl gateway add "$OPENSHELL_GATEWAY_ENDPOINT" --name inner
+OPENSHELL_OIDC_CLIENT_SECRET=e2e-dummy openshellctl \
+  --oidc-issuer "$NESTED_OIDC_ISSUER" \
+  --oidc-client-id "$NESTED_OIDC_CLIENT_ID" \
+  --oidc-audience "$NESTED_OIDC_AUDIENCE" \
+  gateway add "$NESTED_GATEWAY_ENDPOINT" --name inner
 rc=$?
 echo "GATEWAY_ADD_RC=$rc"
 openshellctl whoami >/dev/null 2>&1 && echo WHOAMI_OK || echo WHOAMI_FAILED'
@@ -152,8 +157,15 @@ NAME2="e2e-nested-${RUN_ID}-2"
 CHILD2="${NAME2}-child"
 SCRIPT2=$(cat <<'INNERSCRIPT'
 set -euo pipefail
-openshellctl gateway add "$OPENSHELL_GATEWAY_ENDPOINT" --name inner
-openshellctl doctor
+openshellctl \
+  --oidc-issuer "$NESTED_OIDC_ISSUER" \
+  --oidc-client-id "$NESTED_OIDC_CLIENT_ID" \
+  --oidc-audience "$NESTED_OIDC_AUDIENCE" \
+  gateway add "$NESTED_GATEWAY_ENDPOINT" --name inner
+openshellctl -g inner whoami
+# Informational only: doctor's Roles check reads raw token claims and
+# false-fails for service accounts whose roles are assigned gateway-side.
+openshellctl -g inner doctor || echo "DOCTOR_RC=$?"
 openshellctl -g inner sandbox create \
     --name "${NAME}-child" \
     --from "$IMAGE" \
@@ -183,8 +195,11 @@ fi
 _info "=== Check 3: agent-driven nested sandbox ==="
 NAME3="e2e-nested-${RUN_ID}-3"
 CHILD3="${NAME3}-child"
-PROMPT3="Using openshellctl, register the gateway at ${GATEWAY_ENDPOINT} as 'inner', run openshellctl doctor, then create a sandbox named ${CHILD3} from image ${IMAGE} with --no-keep --no-tty --no-auto-providers whose command is \`echo CHILD_OK\`. Print the child's output verbatim and nothing else."
-SCRIPT3="claude --dangerously-skip-permissions --print \"$PROMPT3\""
+PROMPT3="Using openshellctl, register the gateway by running exactly: openshellctl --oidc-issuer ${OIDC_ISSUER} --oidc-client-id ${OIDC_CLIENT_ID} --oidc-audience ${OIDC_AUDIENCE} gateway add ${GATEWAY_ENDPOINT} --name inner. Then run: openshellctl -g inner whoami. Then create a sandbox named ${CHILD3} from image ${IMAGE} with --no-keep --no-tty --no-auto-providers whose command is: echo CHILD_OK. Print the output of the child sandbox verbatim and nothing else."
+case "$PROMPT3" in
+  *\'*|*\`*|*\$*|*\"*) echo "[e2e] FAIL: check 3 prompt contains a shell-active character" >&2; exit 1 ;;
+esac
+SCRIPT3="claude --dangerously-skip-permissions --print '${PROMPT3}'"
 
 set +e
 output3=$(_run_sandbox "$NAME3" "$SCRIPT3" \
