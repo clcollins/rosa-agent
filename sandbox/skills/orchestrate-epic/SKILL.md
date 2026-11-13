@@ -19,6 +19,7 @@ python3 -m orchestrate_epic <subcommand> [args]
 ```
 
 Subcommands:
+
 - `filter-actionable` — pipe a Jira search response, get actionable stories
 - `sandbox-name <KEY> [--suffix fixup]` — derive a valid sandbox name
 - `sandbox-create-args --name N --template T --prompt P [--model M]` — build args
@@ -35,9 +36,11 @@ Subcommands:
 2. Vault OIDC session active — tokens expire in **minutes**
 3. Vault env vars (must be set on EVERY openshellctl call — shell state does
    not persist between tool calls):
-   ```
+
+   ```shell
    export OPENSHELL_VAULT_KV_MOUNT=osd-sre OPENSHELL_VAULT_KV_PATH=rosa-agent OPENSHELL_VAULT_FIELD_PREFIX=hypershell
    ```
+
 4. Jira API access (via the `jira` skill's curl helpers, or shim-mcp)
 5. `gh` CLI for PR monitoring
 6. The epic key that defines the scope
@@ -45,13 +48,16 @@ Subcommands:
 ## Phase 0 — Discovery
 
 1. **Fetch epic children.** Use the Jira v3 search endpoint (v2 is removed):
+
    ```shell
    jira "$JB/rest/api/3/search/jql?jql=%22Epic+Link%22+%3D+<EPIC>&fields=summary,status,issuetype"
    ```
+
    Pipe the result into `python3 -m orchestrate_epic filter-actionable` to
    get the actionable stories (filters out Closed and Spike cards).
 
 2. **Discover the active sprint** (for adding cards later):
+
    ```shell
    jira "$JB/rest/agile/1.0/board?projectKeyOrId=<PROJECT>&type=scrum"
    # note the board ID, then:
@@ -59,6 +65,7 @@ Subcommands:
    ```
 
 3. **Discover transition IDs** if not already known:
+
    ```shell
    jira "$JB/rest/api/2/issue/<ANY-KEY>/transitions"
    ```
@@ -131,9 +138,11 @@ Use `sandbox-name <KEY> --suffix fixup` (or `nits`, `rebase`) for the name.
 
 1. **Merge conflict-free PRs first** — conflicts compound with each merge
 2. After each merge, check remaining PRs:
+
    ```shell
    gh pr view <N> --repo <owner/repo> --json mergeable,mergeStateStatus
    ```
+
    Values: `MERGEABLE|CONFLICTING`, `CLEAN|DIRTY|UNSTABLE|BLOCKED`
 3. For conflicting PRs, combine rebase + any pending fixups into ONE sandbox
 4. **Draft PR gotcha**: `gh pr merge` fails on drafts. Run
@@ -144,18 +153,25 @@ Use `sandbox-name <KEY> --suffix fixup` (or `nits`, `rebase`) for the name.
 After each PR merges:
 
 1. Add card to sprint:
+
    ```shell
    python3 -m orchestrate_epic sprint-payload <KEY> | jira -H "Content-Type: application/json" -X POST "$JB/rest/agile/1.0/sprint/<sprintId>/issue" -d @-
    ```
+
 2. Update assignee:
+
    ```shell
    python3 -m orchestrate_epic assignee-payload --account-id <ID> | jira -H "Content-Type: application/json" -X PUT "$JB/rest/api/2/issue/<KEY>" -d @-
    ```
+
 3. Add PR link:
+
    ```shell
    python3 -m orchestrate_epic remote-link-payload --url <PR_URL> --title "PR #N: title" | jira -H "Content-Type: application/json" -X POST "$JB/rest/api/2/issue/<KEY>/remotelink" -d @-
    ```
+
 4. Transition to Closed:
+
    ```shell
    python3 -m orchestrate_epic transition-payload --transition-id <ID> | jira -H "Content-Type: application/json" -X POST "$JB/rest/api/2/issue/<KEY>/transitions" -d @-
    ```
@@ -190,13 +206,16 @@ The comment uses Jira wiki markup (h2., ||table||, [text|url], (/)).
 ## Stuck sandbox rules
 
 Run `python3 -m orchestrate_epic detect-stuck --type <type> --elapsed-minutes <N>`:
+
 - `ok` — sandbox running within normal time
 - `investigate` — use `sandbox exec` to diagnose:
+
   ```shell
   openshellctl sandbox exec --name <name> -- ps aux
   openshellctl sandbox exec --name <name> -- git -C /sandbox/<repo> status
   openshellctl sandbox exec --name <name> -- git -C /sandbox/<repo> diff --stat
   ```
+
   The `--name` flag is REQUIRED — without it, exec hits the "last-used" sandbox.
   `exec` only works on Ready-phase sandboxes — Completed ones reject it.
 - `kill` — delete and relaunch with a hardened prompt
@@ -212,6 +231,7 @@ Run `python3 -m orchestrate_epic detect-stuck --type <type> --elapsed-minutes <N
 ### Hardened prompt rules (prevent stuck sandboxes)
 
 Always include in fixup/rebase prompts:
+
 - "Commit and push EACH fix individually rather than batching"
 - "If tests fail after 3 minutes, commit the code changes anyway"
 
@@ -220,6 +240,7 @@ These two rules reduced a 50+ min stuck sandbox to 4 min in the trial.
 ## CI system detection
 
 Different repos use different CI. Detect before advising on merge:
+
 - **Prow** (OpenShift GitHub repos): `/ok-to-test`, `/lgtm`, `/approve`
 - **GitHub Actions** (newer repos): auto-triggers for org PRs; external fork
   PRs may need manual workflow approval
@@ -236,5 +257,6 @@ treated as unresolved template parameters. Use `env | grep` or `$VAR`
 
 openshellctl does NOT relay container stdout. To capture output from a
 sandbox:
+
 1. Write to a file under `/sandbox/` (NOT `/tmp/` — download restricted)
 2. `openshellctl sandbox download <name> /sandbox/<file> <local-path>`
