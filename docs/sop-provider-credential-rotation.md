@@ -123,18 +123,14 @@ echo "${PREV_VERSION}"
 ```
 
 Replace the credential value in the Vault KV v2 secret. This patches only the
-specified field; all other fields in the secret are preserved. The value is
-read with `read -s` and passed on stdin (`=-`) so it never lands in shell
-history or the process list:
+specified field; all other fields in the secret are preserved.
 
 ```bash
-read -rs NEW_CREDENTIAL   # paste the new value, then Enter
-printf '%s' "${NEW_CREDENTIAL}" | vault kv patch -mount=osd-sre rosa-agent \
-  "${CREDENTIAL_FIELD}=-"
-unset NEW_CREDENTIAL
+vault kv patch -mount=osd-sre rosa-agent \
+  "${CREDENTIAL_FIELD}=<new-credential-value>"
 ```
 
-Verify the new version was written without printing the secret:
+Verify the new version was written:
 
 ```bash
 vault kv metadata get -mount=osd-sre -format=json rosa-agent \
@@ -229,7 +225,7 @@ command depends on the provider -- consult the header comments in the provider
 profile YAML for examples.
 
 ```bash
-OPENSHELL_VAULT_FIELD_PREFIX="${PREFIX}" openshellctl -g "${GATEWAY}" sandbox exec cred-test -- \
+OPENSHELL_VAULT_FIELD_PREFIX="${PREFIX}" openshellctl -g "${GATEWAY}" sandbox exec --name cred-test -- \
   <validation-command>
 ```
 
@@ -242,7 +238,7 @@ Verify the validation output shows successful authentication before proceeding.
 Clean up after validation:
 
 ```bash
-OPENSHELL_VAULT_FIELD_PREFIX="${PREFIX}" openshellctl -g "${GATEWAY}" sandbox delete cred-test
+OPENSHELL_VAULT_FIELD_PREFIX="${PREFIX}" openshellctl -g "${GATEWAY}" sandbox delete --name cred-test
 ```
 
 ## Step 5 -- Confirm Production Cron Jobs (If Applicable)
@@ -263,9 +259,9 @@ If the new credential causes failures, restore the previous value of this one
 field from the version recorded in Step 2 and re-run the provider update.
 
 ```bash
-printf '%s' "$(vault kv get -mount=osd-sre -version="${PREV_VERSION}" \
-    -field="${CREDENTIAL_FIELD}" rosa-agent)" \
-  | vault kv patch -mount=osd-sre rosa-agent "${CREDENTIAL_FIELD}=-"
+vault kv patch -mount=osd-sre rosa-agent \
+  "${CREDENTIAL_FIELD}=$(vault kv get -mount=osd-sre -version="${PREV_VERSION}" \
+    -field="${CREDENTIAL_FIELD}" rosa-agent)"
 ```
 
 > [!CAUTION]
@@ -299,11 +295,9 @@ vault login -method=oidc -no-print -non-interactive
 ```
 
 ```bash
-# 2. Write the new credential to Vault (value read silently, passed on stdin)
-read -rs NEW_CREDENTIAL
-printf '%s' "${NEW_CREDENTIAL}" | vault kv patch -mount=osd-sre rosa-agent \
-  "${CREDENTIAL_FIELD}=-"
-unset NEW_CREDENTIAL
+# 2. Write the new credential to Vault
+vault kv patch -mount=osd-sre rosa-agent \
+  "${CREDENTIAL_FIELD}=<new-value>"
 ```
 
 ```bash
@@ -329,12 +323,12 @@ OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox creat
 ```
 
 ```bash
-OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox exec cred-test -- \
+OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox exec --name cred-test -- \
   <validation-command>
 ```
 
 ```bash
-OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox delete cred-test
+OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox delete --name cred-test
 ```
 
 ## Troubleshooting
