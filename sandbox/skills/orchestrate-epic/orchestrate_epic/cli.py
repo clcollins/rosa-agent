@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from . import __version__
 from .jira_models import (
@@ -19,15 +19,19 @@ from .jira_models import (
     build_assignee_payload,
     build_epic_comment,
     build_remote_link_payload,
-    build_sprint_payload,
     build_transition_payload,
     filter_actionable,
     parse_epic_children,
 )
 from .sandbox_models import (
+    SandboxLabelError,
     SandboxNameError,
     build_create_args,
+    build_labels,
     detect_stuck,
+    make_run_id,
+    parse_sandbox_list,
+    parse_sandbox_status,
     sandbox_name,
     sandbox_name_suffixed,
 )
@@ -67,13 +71,43 @@ def build_parser() -> argparse.ArgumentParser:
     p_create.add_argument("--template", required=True)
     p_create.add_argument("--prompt", required=True)
     p_create.add_argument("--model", default=None)
+    p_create.add_argument("--run-id", required=True)
+    p_create.add_argument("--epic", required=True)
+    p_create.add_argument("--ticket", required=True)
+    p_create.add_argument(
+        "--type",
+        required=True,
+        dest="sandbox_type",
+        choices=["implementation", "fixup", "nit", "rebase"],
+    )
+    p_create.add_argument("--environment", default="test")
+    p_create.add_argument(
+        "--label",
+        action="append",
+        default=[],
+        dest="extra_labels",
+        metavar="KEY=VALUE",
+        help="Extra label key=value (repeatable).",
+    )
     p_create.set_defaults(func=cmd_sandbox_create_args)
+
+    p_run_id = sub.add_parser(
+        "run-id",
+        help="Generate a unique run ID for an epic orchestration run.",
+    )
+    p_run_id.add_argument("--epic", required=True)
+    p_run_id.set_defaults(func=cmd_run_id)
 
     p_stuck = sub.add_parser(
         "detect-stuck",
         help="Check if a sandbox is stuck.",
     )
-    p_stuck.add_argument("--type", required=True, dest="sandbox_type")
+    p_stuck.add_argument(
+        "--type",
+        required=True,
+        dest="sandbox_type",
+        choices=["nit", "fixup", "rebase", "implementation"],
+    )
     p_stuck.add_argument("--elapsed-minutes", required=True, type=int)
     p_stuck.set_defaults(func=cmd_detect_stuck)
 
@@ -82,6 +116,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build an epic completion comment. Read merged stories JSON from stdin.",
     )
     p_comment.add_argument("--repo", required=True)
+    p_comment.add_argument(
+        "--jira-base-url",
+        default="https://redhat.atlassian.net",
+    )
     p_comment.set_defaults(func=cmd_epic_comment)
 
     p_assign = sub.add_parser(
@@ -106,12 +144,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_trans.add_argument("--transition-id", required=True)
     p_trans.set_defaults(func=cmd_transition_payload)
 
-    p_sprint = sub.add_parser(
-        "sprint-payload",
-        help="Emit a Jira sprint add-issues payload.",
+    p_status = sub.add_parser(
+        "sandbox-status",
+        help="Parse sandbox JSON from stdin, emit name/phase/resource_version.",
     )
-    p_sprint.add_argument("issues", nargs="+")
-    p_sprint.set_defaults(func=cmd_sprint_payload)
+    p_status.add_argument(
+        "--list",
+        action="store_true",
+        dest="is_list",
+        help="Parse a JSON array of sandboxes instead of a single sandbox.",
+    )
+    p_status.set_defaults(func=cmd_sandbox_status)
 
     return parser
 
@@ -137,14 +180,45 @@ def cmd_sandbox_name(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_extra_labels(raw: List[str]) -> Dict[str, str]:
+    """Parse repeatable --label KEY=VALUE strings into a dict."""
+    extra: Dict[str, str] = {}
+    for item in raw:
+        if "=" not in item:
+            raise SandboxLabelError(
+                f"invalid --label '{item}': must be KEY=VALUE"
+            )
+        k, v = item.split("=", 1)
+        extra[k] = v
+    return extra
+
+
 def cmd_sandbox_create_args(args: argparse.Namespace) -> int:
+    extra = _parse_extra_labels(args.extra_labels)
+    labels = build_labels(
+        run_id=args.run_id,
+        epic_key=args.epic,
+        ticket_key=args.ticket,
+        sandbox_type=args.sandbox_type,
+        environment=args.environment,
+        extra=extra or None,
+    )
     result = build_create_args(
         name=args.name,
         template_path=args.template,
         prompt=args.prompt,
+        labels=labels,
         model=args.model,
     )
     print(json.dumps(result))
+    return 0
+
+
+def cmd_run_id(args: argparse.Namespace) -> int:
+    from datetime import datetime, timezone
+
+    run_id = make_run_id(args.epic, datetime.now(timezone.utc))
+    print(run_id)
     return 0
 
 
@@ -157,8 +231,10 @@ def cmd_detect_stuck(args: argparse.Namespace) -> int:
 def cmd_epic_comment(args: argparse.Namespace) -> int:
     data = json.load(sys.stdin)
     stories = [MergedStory(**s) for s in data]
-    comment = build_epic_comment(stories, repo=args.repo)
-    print(comment)
+    adf = build_epic_comment(
+        stories, repo=args.repo, jira_base_url=args.jira_base_url,
+    )
+    print(json.dumps({"body": adf}, indent=2))
     return 0
 
 
@@ -177,8 +253,18 @@ def cmd_transition_payload(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_sprint_payload(args: argparse.Namespace) -> int:
-    print(json.dumps(build_sprint_payload(args.issues)))
+def cmd_sandbox_status(args: argparse.Namespace) -> int:
+    data = json.load(sys.stdin)
+    if args.is_list:
+        statuses = parse_sandbox_list(data)
+        result = [
+            {"name": s.name, "phase": s.phase, "resource_version": s.resource_version}
+            for s in statuses
+        ]
+    else:
+        s = parse_sandbox_status(data)
+        result = {"name": s.name, "phase": s.phase, "resource_version": s.resource_version}
+    print(json.dumps(result, indent=2))
     return 0
 
 
@@ -190,7 +276,14 @@ def run(argv: Optional[List[str]] = None) -> int:
         return 1
     try:
         return args.func(args)
-    except (JiraPayloadError, SandboxNameError) as exc:
+    except (
+        JiraPayloadError,
+        SandboxLabelError,
+        SandboxNameError,
+        json.JSONDecodeError,
+        KeyError,
+        TypeError,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

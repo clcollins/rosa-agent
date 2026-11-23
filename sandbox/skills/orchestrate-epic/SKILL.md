@@ -5,6 +5,11 @@ description: Orchestrate parallel implementation of a Jira epic's stories by lau
 
 # Orchestrate epic: parallel sandbox agents with review/merge coordination
 
+**This skill runs on a laptop (or any host with `openshellctl`), NOT
+inside a sandbox.** It requires interactive vault OIDC login, Claude
+Code's `run_in_background`, a human for review feedback, and egress to
+the OpenShell gateway. Child sandboxes cannot create nested sandboxes.
+
 You are the orchestrator ("Master Control"). You launch one sandbox agent
 per actionable story in the epic, monitor them, coordinate review fixups,
 manage merge conflicts, update Jira, and clean up.
@@ -22,41 +27,82 @@ Subcommands:
 
 - `filter-actionable` — pipe a Jira search response, get actionable stories
 - `sandbox-name <KEY> [--suffix fixup]` — derive a valid sandbox name
-- `sandbox-create-args --name N --template T --prompt P [--model M]` — build args
-- `detect-stuck --type nit|fixup|implementation --elapsed-minutes N` — stuck check
-- `epic-comment --repo owner/repo` — pipe merged stories JSON, get wiki comment
+- `sandbox-create-args --name N --template T --prompt P --run-id R --epic E --ticket K --type T [--model M] [--environment E] [--label K=V ...]` — build args with cost-tracking labels
+- `run-id --epic E` — generate a unique run ID for this orchestration run
+- `detect-stuck --type nit|fixup|rebase|implementation --elapsed-minutes N` — stuck check
+- `epic-comment --repo owner/repo [--jira-base-url URL]` — pipe merged stories JSON, get wiki comment
 - `assignee-payload --account-id ID` — Jira assignee payload
 - `remote-link-payload --url U --title T` — Jira remote link payload
 - `transition-payload --transition-id ID` — Jira transition payload
-- `sprint-payload ISSUE [ISSUE ...]` — Jira sprint-add payload
+- `sandbox-status [--list]` — parse sandbox JSON from stdin, emit structured status
 
 ## Prerequisites
 
+This skill runs on a **laptop** (not inside a sandbox):
+
 1. `openshellctl` on PATH
-2. Vault OIDC session active — tokens expire in **minutes**
-3. Vault env vars (must be set on EVERY openshellctl call — shell state does
-   not persist between tool calls):
-
-   ```shell
-   export OPENSHELL_VAULT_KV_MOUNT=osd-sre OPENSHELL_VAULT_KV_PATH=rosa-agent OPENSHELL_VAULT_FIELD_PREFIX=hypershell
-   ```
-
+2. Vault OIDC session active — tokens expire in **minutes**;
+   refresh with `vault login -method=oidc -non-interactive -no-print`.
+   All `openshellctl` calls must go through the `_osctl` wrapper (defined
+   in Phase 1) which sets the vault env vars.
+3. A local checkout of this repo (for the template file)
 4. Jira API access (via the `jira` skill's curl helpers, or shim-mcp)
 5. `gh` CLI for PR monitoring
 6. The epic key that defines the scope
 
+## Labels
+
+Every child sandbox MUST carry cost-tracking labels. The `_run_sandbox`
+wrapper (Phase 1) applies them automatically via the `sandbox-create-args`
+helper. Never bypass this.
+
+| Key | Value | Source |
+| --- | --- | --- |
+| `project` | `rosa-agent` | Fixed |
+| `workload` | `orchestrate-epic` | Fixed |
+| `owner` | `sd-sre-platform` | Fixed |
+| `environment` | `test` (default) | Per run (`--environment`) |
+| `run-id` | `<epic>-<YYYYmmddHHMM>` | Generated once in Phase 0 |
+| `epic` | `<epic key, lowercase>` | Per run |
+| `ticket` | `<ticket key, lowercase>` | Per child |
+| `sandbox-type` | `implementation\|fixup\|nit\|rebase` | Per child |
+
+Additional labels can be passed via `--label key=value` but cannot
+override the base or per-child keys.
+
 ## Phase 0 — Discovery
 
-1. **Fetch epic children.** Use the Jira v3 search endpoint (v2 is removed):
+1. **Generate run ID.** Create once and reuse for every child sandbox in this run:
 
    ```shell
-   jira "$JB/rest/api/3/search/jql?jql=%22Epic+Link%22+%3D+<EPIC>&fields=summary,status,issuetype"
+   RUN_ID="$(python3 -m orchestrate_epic run-id --epic <EPIC>)"
+   ```
+
+2. **Fetch epic children.** Use the Jira v3 search endpoint (v2 is removed):
+
+   ```shell
+   jira "$JB/rest/api/3/search/jql?jql=parent+%3D+<EPIC>&fields=summary,status,issuetype"
+   ```
+
+   The v3 search endpoint paginates — repeat with `nextPageToken` until
+   all children are fetched:
+
+   ```shell
+   CHILDREN="[]"
+   TOKEN=""
+   while true; do
+     RESULT=$(jira "$JB/rest/api/3/search/jql?jql=parent+%3D+$EPIC&fields=summary,status,issuetype${TOKEN:+&nextPageToken=$TOKEN}")
+     CHILDREN=$(echo "$CHILDREN" "$RESULT" | jq -s '.[0] + .[1].issues')
+     TOKEN=$(echo "$RESULT" | jq -r '.nextPageToken // empty')
+     [[ -n "$TOKEN" ]] || break
+   done
+   echo "{\"issues\": $CHILDREN}" | python3 -m orchestrate_epic filter-actionable
    ```
 
    Pipe the result into `python3 -m orchestrate_epic filter-actionable` to
    get the actionable stories (filters out Closed and Spike cards).
 
-2. **Discover the active sprint** (for adding cards later):
+3. **Discover the active sprint** (for adding cards later):
 
    ```shell
    jira "$JB/rest/agile/1.0/board?projectKeyOrId=<PROJECT>&type=scrum"
@@ -64,50 +110,109 @@ Subcommands:
    jira "$JB/rest/agile/1.0/board/<boardId>/sprint?state=active"
    ```
 
-3. **Discover transition IDs** if not already known:
+4. **Discover the Sprint custom field ID** (needed for adding cards to sprint):
 
    ```shell
-   jira "$JB/rest/api/2/issue/<ANY-KEY>/transitions"
+   jira "$JB/rest/api/3/field" | jq '.[] | select(.name == "Sprint") | .id'
    ```
 
-4. **Validate scope.** Each card should have enough detail for autonomous
+   Store the result (e.g. `customfield_10020`) as `SPRINT_FIELD_ID`.
+
+5. **Discover transition IDs** if not already known:
+
+   ```shell
+   jira "$JB/rest/api/3/issue/<ANY-KEY>/transitions"
+   ```
+
+6. **Validate scope.** Each card should have enough detail for autonomous
    implementation. If a card is too sparse, flag it for human enrichment —
    do NOT launch a sandbox for it.
 
 ## Phase 1 — Parallel implementation
 
+Define the vault wrapper and session variables before launching any sandboxes:
+
+```shell
+_osctl() {
+  OPENSHELL_VAULT_KV_MOUNT=osd-sre OPENSHELL_VAULT_KV_PATH=rosa-agent \
+  OPENSHELL_VAULT_FIELD_PREFIX=hypershell "$@"
+}
+```
+
+Set session variables:
+
+```shell
+# TEMPLATE must point to noninteractive-keep.yaml in YOUR local checkout.
+# openshellctl reads this file locally and uploads it when creating the sandbox.
+TEMPLATE="$(git rev-parse --show-toplevel)/sandbox/templates/noninteractive-keep.yaml"
+MODEL="claude-sonnet-4-6"
+EPIC="<EPIC-KEY>"  # e.g. ROSAENG-12345
+```
+
+Define the `_run_sandbox` wrapper once per session. All sandbox creation
+MUST go through this function to ensure cost-tracking labels are applied:
+
+```shell
+_run_sandbox() {  # usage: _run_sandbox <KEY> <type> <prompt> [name-suffix]
+  local key=$1 type=$2 prompt=$3 suffix=${4:-}
+  local name
+  name=$(python3 -m orchestrate_epic sandbox-name "$key" ${suffix:+--suffix "$suffix"}) || return 1
+  local json
+  json=$(python3 -m orchestrate_epic sandbox-create-args \
+    --name "$name" --template "$TEMPLATE" --prompt "$prompt" --model "$MODEL" \
+    --run-id "$RUN_ID" --epic "$EPIC" --ticket "$key" --type "$type") || return 1
+  local -a args
+  mapfile -d '' args < <(printf '%s' "$json" | jq -j '.[] + "\u0000"')
+  [[ ${#args[@]} -gt 0 ]] || { echo "error: sandbox-create-args produced no arguments" >&2; return 1; }
+  _osctl openshellctl "${args[@]}"
+}
+```
+
 For each actionable story, launch a sandbox:
 
 ```shell
-export OPENSHELL_VAULT_KV_MOUNT=osd-sre OPENSHELL_VAULT_KV_PATH=rosa-agent OPENSHELL_VAULT_FIELD_PREFIX=hypershell
-openshellctl sandbox create \
-  --name "$(python3 -m orchestrate_epic sandbox-name <KEY>)" \
-  -f <keep-alive-template> \
-  -p "NAME=$(python3 -m orchestrate_epic sandbox-name <KEY>)" \
-  -p "PROMPT=/implement-ticket <KEY>" \
-  --env "ANTHROPIC_MODEL=claude-opus-4-6" \
-  --detach --replace
+_run_sandbox <KEY> implementation "/implement-ticket <KEY>"
 ```
 
 ### Critical rules
 
+- **Never call `openshellctl sandbox create` directly — always `_run_sandbox`,
+  so cost-tracking labels are applied.**
 - **Use `-f` and `-p`**, not `--template` or `--set`.
 - **`--detach` blocks** until Ready phase. Run via `run_in_background`.
-- **Use the keep-alive template** (no `noKeep: true`) so completed sandboxes
-  persist for failure inspection. The upstream `noninteractive.yaml` has
-  `noKeep: true` which auto-deletes — use the keep-alive variant instead.
+- **Use `noninteractive-keep.yaml`** (`noKeep: false`) so completed sandboxes
+  persist for failure inspection. The standard `noninteractive.yaml` has
+  `noKeep: true` which auto-deletes on completion.
 - **Max sandbox name: 19 characters.** The helper validates this.
-- **Vault tokens expire in minutes.** Refresh proactively before every
-  openshellctl call: `vault login -method=oidc -non-interactive -no-print`.
-  If SSO is also expired, notify the human.
+  Use short suffixes (`fx`, `nt`, `rb`) to leave room for longer ticket keys.
+- **`--replace` kills by name, not run-id.** Before relaunching a sandbox,
+  check if the name is already in use by another run:
+
+  ```shell
+  _osctl openshellctl sandbox get <name> --output json 2>/dev/null \
+    | jq -r '.metadata.labels["run-id"] // "none"'
+  ```
+
+  Only proceed with `--replace` if the existing sandbox's `run-id` matches
+  `$RUN_ID` or the sandbox doesn't exist. If it belongs to another run,
+  stop and ask the human.
+- **Vault tokens expire in minutes.** Refresh proactively:
+  `vault login -method=oidc -non-interactive -no-print`.
+  If SSO is also expired, notify the human. All `openshellctl` calls go
+  through `_osctl` which sets the vault env vars.
 
 ### Monitoring obligation
 
 You MUST actively poll all running sandboxes — do NOT wait for the human
 to ask "status?":
 
-- Poll `openshellctl sandbox list` every 2-5 minutes
-- Use `openshellctl sandbox get <name> --output json` for structured status
+- Poll only this run's sandboxes using the label selector:
+
+  ```shell
+  _osctl openshellctl sandbox list --selector "run-id=$RUN_ID" --output json
+  ```
+
+- Use `_osctl openshellctl sandbox get <name> --output json` for structured status
 - When a sandbox completes, immediately check for new PRs
 - Track ALL sandboxes concurrently, not just the most recent
 - Proactively report completions and issues
@@ -123,7 +228,14 @@ wait 2-3 minutes and recheck before assuming failure.
 When the human provides PR review feedback:
 
 1. Parse the feedback into blocking / should-fix / nit categories
-2. Launch a fixup sandbox with a **specific prompt** that includes:
+2. Launch a fixup sandbox via `_run_sandbox` with the matching type:
+
+   ```shell
+   _run_sandbox <KEY> fixup "<fixup prompt with PR#, branch, file:line refs>" fx
+   _run_sandbox <KEY> nit "<nit prompt>" nt
+   ```
+
+   The prompt MUST include:
    - Exact PR number and branch name
    - Each fix with file:line references
    - "Push to existing branch, do NOT create a new PR"
@@ -131,8 +243,6 @@ When the human provides PR review feedback:
    - "If tests fail after 3 minutes, commit the code changes anyway"
 3. Include ALL nits — every code-touching nit must be addressed
 4. Design questions with concrete fixes: include them, don't defer
-
-Use `sandbox-name <KEY> --suffix fixup` (or `nits`, `rebase`) for the name.
 
 ## Phase 3 — Merge conflict coordination
 
@@ -145,6 +255,12 @@ Use `sandbox-name <KEY> --suffix fixup` (or `nits`, `rebase`) for the name.
 
    Values: `MERGEABLE|CONFLICTING`, `CLEAN|DIRTY|UNSTABLE|BLOCKED`
 3. For conflicting PRs, combine rebase + any pending fixups into ONE sandbox
+   via `_run_sandbox`:
+
+   ```shell
+   _run_sandbox <KEY> rebase "<rebase + fixup prompt>" rb
+   ```
+
 4. **Draft PR gotcha**: `gh pr merge` fails on drafts. Run
    `gh pr ready <N> --repo <owner/repo>` first.
 
@@ -152,37 +268,52 @@ Use `sandbox-name <KEY> --suffix fixup` (or `nits`, `rebase`) for the name.
 
 After each PR merges:
 
-1. Add card to sprint:
+1. Add card to sprint. Sprint is a **custom field** — discover the field
+   ID once per project:
 
    ```shell
-   python3 -m orchestrate_epic sprint-payload <KEY> | jira -H "Content-Type: application/json" -X POST "$JB/rest/agile/1.0/sprint/<sprintId>/issue" -d @-
+   # Find the Sprint field ID (run once):
+   jira "$JB/rest/api/3/field" | jq '.[] | select(.name == "Sprint") | .id'
+   # Returns e.g. "customfield_10020"
    ```
+
+   Then update the issue:
+
+   ```shell
+   jira -H "Content-Type: application/json" -X PUT "$JB/rest/api/3/issue/<KEY>" \
+     -d '{"fields": {"<SPRINT_FIELD_ID>": <sprintId>}}'
+   ```
+
+   If this fails, ask to add `POST /rest/agile/1.0/sprint/*/issue` to the
+   Jira provider profile — that endpoint is purpose-built for sprint moves.
 
 2. Update assignee:
 
    ```shell
-   python3 -m orchestrate_epic assignee-payload --account-id <ID> | jira -H "Content-Type: application/json" -X PUT "$JB/rest/api/2/issue/<KEY>" -d @-
+   python3 -m orchestrate_epic assignee-payload --account-id <ID> | jira -H "Content-Type: application/json" -X PUT "$JB/rest/api/3/issue/<KEY>" -d @-
    ```
 
 3. Add PR link:
 
    ```shell
-   python3 -m orchestrate_epic remote-link-payload --url <PR_URL> --title "PR #N: title" | jira -H "Content-Type: application/json" -X POST "$JB/rest/api/2/issue/<KEY>/remotelink" -d @-
+   python3 -m orchestrate_epic remote-link-payload --url <PR_URL> --title "PR #N: title" | jira -H "Content-Type: application/json" -X POST "$JB/rest/api/3/issue/<KEY>/remotelink" -d @-
    ```
 
 4. Transition to Closed:
 
    ```shell
-   python3 -m orchestrate_epic transition-payload --transition-id <ID> | jira -H "Content-Type: application/json" -X POST "$JB/rest/api/2/issue/<KEY>/transitions" -d @-
+   python3 -m orchestrate_epic transition-payload --transition-id <ID> | jira -H "Content-Type: application/json" -X POST "$JB/rest/api/3/issue/<KEY>/transitions" -d @-
    ```
 
 After all stories merge, add an epic completion comment and close the epic:
 
 ```shell
-echo '<merged-stories-json>' | python3 -m orchestrate_epic epic-comment --repo <owner/repo>
+echo '<merged-stories-json>' | python3 -m orchestrate_epic epic-comment --repo <owner/repo> \
+  | jira -H "Content-Type: application/json" -X POST "$JB/rest/api/3/issue/<EPIC>/comment" -d @-
 ```
 
-The comment uses Jira wiki markup (h2., ||table||, [text|url], (/)).
+The comment is emitted as an ADF (Atlassian Document Format) JSON payload
+wrapped in `{"body": ...}`, ready for the v3 comment endpoint.
 
 ### Known Jira limitations
 
@@ -199,9 +330,15 @@ The comment uses Jira wiki markup (h2., ||table||, [text|url], (/)).
 
 ## Phase 5 — Cleanup
 
-1. Delete completed sandboxes — only those you launched (check your log)
-2. Never delete sandboxes with unfamiliar names
-3. `openshellctl sandbox delete <name>` (with vault env vars)
+1. List only this run's sandboxes:
+
+   ```shell
+   _osctl openshellctl sandbox list --selector "run-id=$RUN_ID"
+   ```
+
+2. Delete completed sandboxes — only those you launched (filtered by run-id)
+3. Never delete sandboxes with unfamiliar names
+4. `_osctl openshellctl sandbox delete <name>`
 
 ## Stuck sandbox rules
 
@@ -211,9 +348,9 @@ Run `python3 -m orchestrate_epic detect-stuck --type <type> --elapsed-minutes <N
 - `investigate` — use `sandbox exec` to diagnose:
 
   ```shell
-  openshellctl sandbox exec --name <name> -- ps aux
-  openshellctl sandbox exec --name <name> -- git -C /sandbox/<repo> status
-  openshellctl sandbox exec --name <name> -- git -C /sandbox/<repo> diff --stat
+  _osctl openshellctl sandbox exec --name <name> -- ps aux
+  _osctl openshellctl sandbox exec --name <name> -- git -C /sandbox/<repo> status
+  _osctl openshellctl sandbox exec --name <name> -- git -C /sandbox/<repo> diff --stat
   ```
 
   The `--name` flag is REQUIRED — without it, exec hits the "last-used" sandbox.
@@ -226,6 +363,7 @@ Run `python3 -m orchestrate_epic detect-stuck --type <type> --elapsed-minutes <N
 | --- | --- | --- | --- |
 | nit | 5-10 min | 15 min | 20 min |
 | fixup | 10-15 min | 20 min | 30 min |
+| rebase | 10-15 min | 20 min | 30 min |
 | implementation | 15-45 min | 60 min | 90 min |
 
 ### Hardened prompt rules (prevent stuck sandboxes)
@@ -246,12 +384,13 @@ Different repos use different CI. Detect before advising on merge:
   PRs may need manual workflow approval
 - Do NOT use Prow commands on GH Actions repos — they do nothing
 
-## Template: `${...}` conflicts
+## Template: `${...}` substitution
 
-openshellctl scans the ENTIRE manifest YAML for `${...}` patterns —
-including command text. Bash variable references like `${VAR}` will be
-treated as unresolved template parameters. Use `env | grep` or `$VAR`
-(without braces) instead.
+openshellctl scans string values in the manifest YAML for `${KEY}`
+patterns and substitutes them with `-p KEY=VALUE` parameters. This
+only applies to the manifest file — values passed via `-p` are NOT
+re-scanned. Use `$${VAR}` to escape a literal `${VAR}` in the manifest
+if needed (the `$$` prefix prevents substitution).
 
 ## stdout capture
 
@@ -259,4 +398,4 @@ openshellctl does NOT relay container stdout. To capture output from a
 sandbox:
 
 1. Write to a file under `/sandbox/` (NOT `/tmp/` — download restricted)
-2. `openshellctl sandbox download <name> /sandbox/<file> <local-path>`
+2. `_osctl openshellctl sandbox download <name> /sandbox/<file> <local-path>`

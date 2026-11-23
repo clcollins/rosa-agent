@@ -13,7 +13,6 @@ from orchestrate_epic.jira_models import (
     build_assignee_payload,
     build_remote_link_payload,
     build_transition_payload,
-    build_sprint_payload,
     build_epic_comment,
 )
 
@@ -157,46 +156,79 @@ class BuildTransitionPayloadTests(unittest.TestCase):
             build_transition_payload("")
 
 
-class BuildSprintPayloadTests(unittest.TestCase):
-    def test_single_issue(self):
-        payload = build_sprint_payload(["MCS-278"])
-        self.assertEqual(payload, {"issues": ["MCS-278"]})
-
-    def test_multiple_issues(self):
-        payload = build_sprint_payload(["MCS-278", "MCS-318"])
-        self.assertEqual(payload, {"issues": ["MCS-278", "MCS-318"]})
-
-    def test_empty_list_raises(self):
-        with self.assertRaises(JiraPayloadError):
-            build_sprint_payload([])
-
-
 class BuildEpicCommentTests(unittest.TestCase):
+    def _flatten_text(self, node):
+        """Recursively extract all text from an ADF node."""
+        texts = []
+        if isinstance(node, dict):
+            if node.get("type") == "text":
+                texts.append(node.get("text", ""))
+            for child in node.get("content", []):
+                texts.extend(self._flatten_text(child))
+            for mark in node.get("marks", []):
+                if "attrs" in mark and "href" in mark["attrs"]:
+                    texts.append(mark["attrs"]["href"])
+        return texts
+
+    def test_returns_adf_doc(self):
+        stories = [
+            MergedStory(key="X-1", summary="test", pr_number=1, pr_url="https://example.com/pull/1", merged_date="2026-01-01"),
+        ]
+        doc = build_epic_comment(stories, repo="org/repo")
+        self.assertEqual(doc["type"], "doc")
+        self.assertEqual(doc["version"], 1)
+
     def test_includes_all_merged_stories(self):
         stories = [
             MergedStory(key="MCS-278", summary="warn insecure", pr_number=69, pr_url="https://github.com/org/repo/pull/69", merged_date="2026-11-04"),
             MergedStory(key="MCS-319", summary="harden last_sandbox", pr_number=70, pr_url="https://github.com/org/repo/pull/70", merged_date="2026-11-04"),
         ]
-        comment = build_epic_comment(stories, repo="org/repo")
-        self.assertIn("MCS-278", comment)
-        self.assertIn("MCS-319", comment)
-        self.assertIn("PR #69", comment)
-        self.assertIn("PR #70", comment)
-        self.assertIn("2026-11-04", comment)
+        doc = build_epic_comment(stories, repo="org/repo")
+        all_text = " ".join(self._flatten_text(doc))
+        self.assertIn("MCS-278", all_text)
+        self.assertIn("MCS-319", all_text)
+        self.assertIn("PR #69", all_text)
+        self.assertIn("PR #70", all_text)
+        self.assertIn("2026-11-04", all_text)
 
-    def test_uses_jira_wiki_markup(self):
+    def test_has_table_with_header_row(self):
         stories = [
             MergedStory(key="X-1", summary="test", pr_number=1, pr_url="https://example.com/pull/1", merged_date="2026-01-01"),
         ]
-        comment = build_epic_comment(stories, repo="org/repo")
-        self.assertIn("||", comment)
-        self.assertIn("h2.", comment)
-        self.assertNotIn("##", comment)
-        self.assertNotIn("](", comment)
+        doc = build_epic_comment(stories, repo="org/repo")
+        tables = [n for n in doc["content"] if n["type"] == "table"]
+        self.assertEqual(len(tables), 1)
+        first_row = tables[0]["content"][0]
+        self.assertEqual(first_row["content"][0]["type"], "tableHeader")
 
     def test_empty_stories_raises(self):
         with self.assertRaises(JiraPayloadError):
             build_epic_comment([], repo="org/repo")
+
+    def test_preserves_special_chars_in_summary(self):
+        stories = [
+            MergedStory(key="X-1", summary="fix [array|list] parsing", pr_number=1, pr_url="https://example.com/pull/1", merged_date="2026-01-01"),
+        ]
+        doc = build_epic_comment(stories, repo="org/repo")
+        all_text = " ".join(self._flatten_text(doc))
+        self.assertIn("fix [array|list] parsing", all_text)
+
+    def test_custom_jira_base_url(self):
+        stories = [
+            MergedStory(key="X-1", summary="test", pr_number=1, pr_url="https://example.com/pull/1", merged_date="2026-01-01"),
+        ]
+        doc = build_epic_comment(stories, repo="org/repo", jira_base_url="https://custom.atlassian.net")
+        all_text = " ".join(self._flatten_text(doc))
+        self.assertIn("custom.atlassian.net/browse/X-1", all_text)
+        self.assertNotIn("redhat.atlassian.net", all_text)
+
+    def test_no_false_tests_pass_claim(self):
+        stories = [
+            MergedStory(key="X-1", summary="test", pr_number=1, pr_url="https://example.com/pull/1", merged_date="2026-01-01"),
+        ]
+        doc = build_epic_comment(stories, repo="org/repo")
+        all_text = " ".join(self._flatten_text(doc))
+        self.assertNotIn("Tests pass", all_text)
 
 
 if __name__ == "__main__":

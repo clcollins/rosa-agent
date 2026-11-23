@@ -86,53 +86,114 @@ def build_transition_payload(transition_id: str) -> Dict[str, Any]:
     return {"transition": {"id": transition_id}}
 
 
-def build_sprint_payload(issue_keys: List[str]) -> Dict[str, Any]:
-    """Build a POST payload to add issues to a sprint."""
-    if not issue_keys:
-        raise JiraPayloadError("issue_keys must not be empty")
-    return {"issues": list(issue_keys)}
+def _adf_text(text: str) -> Dict[str, Any]:
+    """Create an ADF text node."""
+    return {"type": "text", "text": text}
+
+
+def _adf_link(text: str, href: str) -> Dict[str, Any]:
+    """Create an ADF text node with a link mark."""
+    return {
+        "type": "text",
+        "text": text,
+        "marks": [{"type": "link", "attrs": {"href": href}}],
+    }
+
+
+def _adf_table_header(text: str) -> Dict[str, Any]:
+    """Create an ADF table header cell."""
+    return {
+        "type": "tableHeader",
+        "content": [{"type": "paragraph", "content": [_adf_text(text)]}],
+    }
+
+
+def _adf_table_cell(content: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Create an ADF table cell with inline content."""
+    return {
+        "type": "tableCell",
+        "content": [{"type": "paragraph", "content": content}],
+    }
 
 
 def build_epic_comment(
     stories: List[MergedStory],
     repo: str,
-) -> str:
-    """Build a Jira wiki markup comment summarizing the epic completion.
+    jira_base_url: str = "https://redhat.atlassian.net",
+) -> Dict[str, Any]:
+    """Build an ADF comment payload summarizing the epic completion.
 
-    Uses Jira wiki markup (not markdown): h2., ||table||, [text|url], (/).
+    Returns a dict suitable for POST /rest/api/3/issue/KEY/comment as the
+    request body (wrap in {"body": <result>}).
     """
     if not stories:
         raise JiraPayloadError("stories must not be empty")
 
-    lines = [
-        "h2. Epic completion summary",
-        "",
-        "All stories in this epic have been implemented and merged.",
-        "",
-        "h3. PRs merged ({repo})".format(repo=repo),
-        "",
-        "||Card||Summary||PR||Merged||",
-    ]
+    base = jira_base_url.rstrip("/")
+
+    header_row = {
+        "type": "tableRow",
+        "content": [
+            _adf_table_header("Card"),
+            _adf_table_header("Summary"),
+            _adf_table_header("PR"),
+            _adf_table_header("Merged"),
+        ],
+    }
+
+    data_rows = []
     for s in stories:
-        lines.append(
-            "|[{key}|https://redhat.atlassian.net/browse/{key}]"
-            "|{summary}"
-            "|[PR #{pr}|{url}]"
-            "|{date}|".format(
-                key=s.key,
-                summary=s.summary,
-                pr=s.pr_number,
-                url=s.pr_url,
-                date=s.merged_date,
-            )
-        )
+        data_rows.append({
+            "type": "tableRow",
+            "content": [
+                _adf_table_cell([_adf_link(s.key, f"{base}/browse/{s.key}")]),
+                _adf_table_cell([_adf_text(s.summary)]),
+                _adf_table_cell([_adf_link(f"PR #{s.pr_number}", s.pr_url)]),
+                _adf_table_cell([_adf_text(s.merged_date)]),
+            ],
+        })
 
-    lines.extend([
-        "",
-        "h3. Definition of Done",
-        "",
-        "* (/) All stories merged",
-        "* (/) Tests pass on all PRs",
-    ])
+    doc: Dict[str, Any] = {
+        "version": 1,
+        "type": "doc",
+        "content": [
+            {
+                "type": "heading",
+                "attrs": {"level": 2},
+                "content": [_adf_text("Epic completion summary")],
+            },
+            {
+                "type": "paragraph",
+                "content": [_adf_text(
+                    "All stories in this epic have been implemented and merged."
+                )],
+            },
+            {
+                "type": "heading",
+                "attrs": {"level": 3},
+                "content": [_adf_text(f"PRs merged ({repo})")],
+            },
+            {
+                "type": "table",
+                "content": [header_row] + data_rows,
+            },
+            {
+                "type": "heading",
+                "attrs": {"level": 3},
+                "content": [_adf_text("Definition of Done")],
+            },
+            {
+                "type": "bulletList",
+                "content": [
+                    {
+                        "type": "listItem",
+                        "content": [{"type": "paragraph", "content": [
+                            _adf_text("All stories merged"),
+                        ]}],
+                    },
+                ],
+            },
+        ],
+    }
 
-    return "\n".join(lines)
+    return doc
