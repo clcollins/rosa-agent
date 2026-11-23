@@ -24,6 +24,15 @@ work out the steps before adding a provider to the descriptor.
 > field is silently reverted by the next `make providers`. To manage a new
 > provider permanently, add it to `providers.yaml` instead of repeating this
 > SOP. See `docs/hypershell-providers.md`, "Data-driven provisioning".
+>
+> **`rosa-agent-openshell` specifically:** this provider's credential env var
+> is `OPENSHELL_OIDC_CLIENT_SECRET`, which `openshellctl` consumes for its own
+> gateway login. Setting it in `openshellctl`'s environment causes a 401 on
+> the gateway itself. After #176, use
+> `make provider PROVIDER=rosa-agent-openshell`, which sets `OPENSHELL_TOKEN`
+> instead.
+
+Not all providers can be rotated with this procedure:
 
 > [!WARNING]
 > **Gateway-refreshed providers are out of scope.** If the provider profile has
@@ -138,6 +147,13 @@ Expected output: `PREV_VERSION + 1`.
 
 Managed providers: run the `make provider` command from the note at the top
 instead of this step.
+
+> [!WARNING]
+> **Never pass `OPENSHELL_OIDC_CLIENT_SECRET` in `openshellctl`'s
+> environment.** `openshellctl` reads that variable for its own gateway login,
+> so setting it as the credential env var causes a 401 on the gateway itself.
+> The `rosa-agent-openshell` provider must be rotated via `make provider`,
+> which passes the credential as `OPENSHELL_TOKEN` instead.
 
 Repeat for each environment, setting both values from the reference table:
 
@@ -332,7 +348,7 @@ OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox delet
 | `MY_TOKEN=...: command not found` | `${VAR}=value cmd` is not an assignment in bash | Prefix the command with `env "${CREDENTIAL_ENV}=..."` |
 | Credential reverts after a later `make providers` | Provider is managed; new value was written to a field other than the descriptor's `vault_field` | Patch the field named in `provider-profiles/providers.yaml` |
 | New credential works briefly, then old/placeholder token returns | Provider has a gateway `refresh:` strategy | Out of scope here; replace refresh material per `docs/hypershell-providers.md` |
-| "token exchange failed (HTTP 401)" | `OPENSHELL_OIDC_CLIENT_SECRET` set without matching `OPENSHELL_OIDC_CLIENT_ID` | Do not set `OPENSHELL_OIDC_CLIENT_SECRET` manually; use the `OPENSHELL_VAULT_FIELD_PREFIX` pattern |
+| "token exchange failed (HTTP 401)" | `OPENSHELL_OIDC_CLIENT_SECRET` in the command environment overrides `openshellctl`'s own gateway login | Use `make provider PROVIDER=rosa-agent-openshell`, which passes the credential as `OPENSHELL_TOKEN`; never pass `OPENSHELL_OIDC_CLIENT_SECRET` via Step 3 |
 
 ## Links
 
@@ -360,3 +376,4 @@ OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox delet
 - `OPENSHELL_VAULT_FIELD_PREFIX` selects the Vault fields openshellctl authenticates with; it does not select the gateway. Always pass `-g <registration>`.
 - Providers listed in `provider-profiles/providers.yaml` are provisioned by `make provider PROVIDER=<name>`; the descriptor's `vault_field` is the source of truth for their credential.
 - Providers whose profile has a `refresh:` block are gateway-refreshed; this SOP does not rotate them.
+- `rosa-agent-openshell` uses `OPENSHELL_OIDC_CLIENT_SECRET`, which collides with `openshellctl`'s own login. It must be rotated via `make provider`, never via Step 3.
