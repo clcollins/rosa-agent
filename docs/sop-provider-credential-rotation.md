@@ -27,10 +27,11 @@ work out the steps before adding a provider to the descriptor.
 >
 > **`rosa-agent-openshell` specifically:** this provider's credential env var
 > is `OPENSHELL_OIDC_CLIENT_SECRET`, which `openshellctl` consumes for its own
-> gateway login. Setting it in `openshellctl`'s environment causes a 401 on
-> the gateway itself. After #176, use
+> gateway login. Setting it in `openshellctl`'s environment causes Keycloak to
+> reject the login with a 401. After #176, use
 > `make provider PROVIDER=rosa-agent-openshell`, which sets `OPENSHELL_TOKEN`
-> instead.
+> from the cached gateway token so `OPENSHELL_OIDC_CLIENT_SECRET` is used only
+> as the provider credential.
 
 Not all providers can be rotated with this procedure:
 
@@ -147,9 +148,11 @@ instead of this step.
 > [!WARNING]
 > **Never pass `OPENSHELL_OIDC_CLIENT_SECRET` in `openshellctl`'s
 > environment.** `openshellctl` reads that variable for its own gateway login,
-> so setting it as the credential env var causes a 401 on the gateway itself.
-> The `rosa-agent-openshell` provider must be rotated via `make provider`,
-> which passes the credential as `OPENSHELL_TOKEN` instead.
+> so setting it as the credential env var causes Keycloak to reject the login
+> with a 401. The `rosa-agent-openshell` provider must be rotated via
+> `make provider PROVIDER=rosa-agent-openshell`, which sets `OPENSHELL_TOKEN`
+> from the cached gateway token so `OPENSHELL_OIDC_CLIENT_SECRET` is used only
+> as the provider credential.
 
 Repeat for each environment, setting both values from the reference table:
 
@@ -238,7 +241,7 @@ Verify the validation output shows successful authentication before proceeding.
 Clean up after validation:
 
 ```bash
-OPENSHELL_VAULT_FIELD_PREFIX="${PREFIX}" openshellctl -g "${GATEWAY}" sandbox delete --name cred-test
+OPENSHELL_VAULT_FIELD_PREFIX="${PREFIX}" openshellctl -g "${GATEWAY}" sandbox delete cred-test
 ```
 
 ## Step 5 -- Confirm Production Cron Jobs (If Applicable)
@@ -328,7 +331,7 @@ OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox exec 
 ```
 
 ```bash
-OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox delete --name cred-test
+OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox delete cred-test
 ```
 
 ## Troubleshooting
@@ -342,7 +345,7 @@ OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox delet
 | `MY_TOKEN=...: command not found` | `${VAR}=value cmd` is not an assignment in bash | Prefix the command with `env "${CREDENTIAL_ENV}=..."` |
 | Credential reverts after a later `make providers` | Provider is managed; new value was written to a field other than the descriptor's `vault_field` | Patch the field named in `provider-profiles/providers.yaml` |
 | New credential works briefly, then old/placeholder token returns | Provider has a gateway `refresh:` strategy | Out of scope here; replace refresh material per `docs/hypershell-providers.md` |
-| "token exchange failed (HTTP 401)" | `OPENSHELL_OIDC_CLIENT_SECRET` in the command environment overrides `openshellctl`'s own gateway login | Use `make provider PROVIDER=rosa-agent-openshell`, which passes the credential as `OPENSHELL_TOKEN`; never pass `OPENSHELL_OIDC_CLIENT_SECRET` via Step 3 |
+| "token exchange failed (HTTP 401)" | `OPENSHELL_OIDC_CLIENT_SECRET` in the command environment overrides `openshellctl`'s own gateway login; Keycloak rejects the login | Use `make provider PROVIDER=rosa-agent-openshell`, which sets `OPENSHELL_TOKEN` from the cached gateway token so the secret is used only as the provider credential; never pass `OPENSHELL_OIDC_CLIENT_SECRET` via Step 3 |
 
 ## Links
 
