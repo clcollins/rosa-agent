@@ -12,7 +12,7 @@ work out the steps before adding a provider to the descriptor.
 
 > [!IMPORTANT]
 > **Managed providers.** If the provider is listed in
-> `provider-profiles/providers.yaml`, do not follow Step 3 by hand. Patch the
+> `hack/providers.yaml`, do not follow Step 3 by hand. Patch the
 > Vault field named in that file (Step 2), then run, per gateway:
 >
 > ```bash
@@ -22,7 +22,7 @@ work out the steps before adding a provider to the descriptor.
 >
 > Patch the field the descriptor names; writing the new value to a different
 > field is silently reverted by the next `make providers`. To manage a new
-> provider permanently, add it to `providers.yaml` instead of repeating this
+> provider permanently, add it to `hack/providers.yaml` instead of repeating this
 > SOP. See `docs/hypershell-providers.md`, "Data-driven provisioning".
 >
 > **`rosa-agent-openshell` specifically:** this provider's credential env var
@@ -99,7 +99,7 @@ PROVIDER_NAME="<openshell-provider-name>"
 ```
 
 For a managed provider, take `CREDENTIAL_FIELD` (`vault_field`) and
-`CREDENTIAL_ENV` (`key`) from its entry in `provider-profiles/providers.yaml`.
+`CREDENTIAL_ENV` (`key`) from its entry in `hack/providers.yaml`.
 
 ## Step 1 -- Authenticate to Vault
 
@@ -343,7 +343,7 @@ OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox delet
 | 403 from Vault API | Vault token (30-min TTL) expired | Re-run `vault login -method=oidc -no-print -non-interactive` |
 | "provider is attached to sandbox(es)" | Cannot delete provider with active sandboxes | Use `provider update --credential` instead |
 | `MY_TOKEN=...: command not found` | `${VAR}=value cmd` is not an assignment in bash | Prefix the command with `env "${CREDENTIAL_ENV}=..."` |
-| Credential reverts after a later `make providers` | Provider is managed; new value was written to a field other than the descriptor's `vault_field` | Patch the field named in `provider-profiles/providers.yaml` |
+| Credential reverts after a later `make providers` | Provider is managed; new value was written to a field other than the descriptor's `vault_field` | Patch the field named in `hack/providers.yaml` |
 | New credential works briefly, then old/placeholder token returns | Provider has a gateway `refresh:` strategy | Out of scope here; replace refresh material per `docs/hypershell-providers.md` |
 | "token exchange failed (HTTP 401)" | `OPENSHELL_OIDC_CLIENT_SECRET` in the command environment overrides `openshellctl`'s own gateway login; Keycloak rejects the login | Use `make provider PROVIDER=rosa-agent-openshell`, which sets `OPENSHELL_TOKEN` from the cached gateway token so the secret is used only as the provider credential; never pass `OPENSHELL_OIDC_CLIENT_SECRET` via Step 3 |
 
@@ -354,7 +354,7 @@ OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox delet
   Vault field, credential env var, and validation commands for each provider)
 - Gateways and service accounts: [hypershell-gateways.md](hypershell-gateways.md)
 - Managed providers and refresh material: [hypershell-providers.md](hypershell-providers.md)
-  and `provider-profiles/providers.yaml` (`make provider PROVIDER=<name>`)
+  and `hack/providers.yaml` (`make provider PROVIDER=<name>`)
 
 ## Agent Metadata
 
@@ -371,6 +371,6 @@ OPENSHELL_VAULT_FIELD_PREFIX=hypershell openshellctl -g rosa-agent sandbox delet
 - The `provider update --credential` path is non-disruptive to running sandboxes, while `provider delete` will fail if any sandbox is attached.
 - Gateway tokens have a 5-minute TTL (separate from the 30-minute Vault token TTL). Using `OPENSHELL_VAULT_FIELD_PREFIX` enables automatic token renewal.
 - `OPENSHELL_VAULT_FIELD_PREFIX` selects the Vault fields openshellctl authenticates with; it does not select the gateway. Always pass `-g <registration>`.
-- Providers listed in `provider-profiles/providers.yaml` are provisioned by `make provider PROVIDER=<name>`; the descriptor's `vault_field` is the source of truth for their credential.
+- Providers listed in `hack/providers.yaml` are provisioned by `make provider PROVIDER=<name>`; the descriptor's `vault_field` is the source of truth for their credential.
 - Providers whose profile has a `refresh:` block are gateway-refreshed; this SOP does not rotate them.
 - `rosa-agent-openshell` uses `OPENSHELL_OIDC_CLIENT_SECRET`, which collides with `openshellctl`'s own login. It must be rotated via `make provider`, never via Step 3.
